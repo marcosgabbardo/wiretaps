@@ -133,7 +133,10 @@ class PIIPatterns:
     # Personal identifiers
     EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
 
-    PHONE_INTL = re.compile(r"\+?[1-9]\d{0,2}[-.\s]?\(?\d{1,4}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,9}")
+    # Phone: must start with + or have parentheses/dashes (to avoid matching plain numbers)
+    PHONE_INTL = re.compile(
+        r"(?:\+[1-9]\d{0,2}[-.\s]?\(?\d{1,4}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,9}|\(\d{2,4}\)[-.\s]?\d{4,5}[-.\s]?\d{4})"
+    )
 
     SSN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
 
