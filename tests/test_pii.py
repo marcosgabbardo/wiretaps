@@ -67,6 +67,74 @@ class TestBrazilianPII:
         assert len(cpf) == 1
 
 
+class TestPhoneNumbers:
+    def test_us_phone(self, detector):
+        matches = detector.scan("Call me at (555) 123-4567")
+        phones = [m for m in matches if "phone" in m.pattern_name]
+        assert len(phones) >= 1
+
+    def test_intl_phone(self, detector):
+        matches = detector.scan("WhatsApp: +55 11 99999-8888")
+        phones = [m for m in matches if "phone" in m.pattern_name]
+        assert len(phones) >= 1
+
+
+class TestIPAddresses:
+    def test_ipv4(self, detector):
+        matches = detector.scan("Server IP: 192.168.1.100")
+        ips = [m for m in matches if m.pattern_name == "ipv4"]
+        assert len(ips) == 1
+
+    def test_ipv4_public(self, detector):
+        matches = detector.scan("Connect to 8.8.8.8")
+        ips = [m for m in matches if m.pattern_name == "ipv4"]
+        assert len(ips) == 1
+
+
+class TestPostalCodes:
+    def test_us_zip(self, detector):
+        matches = detector.scan("ZIP: 90210")
+        zips = [m for m in matches if m.pattern_name == "us_zip"]
+        assert len(zips) == 1
+
+    def test_us_zip_plus4(self, detector):
+        matches = detector.scan("ZIP: 90210-1234")
+        zips = [m for m in matches if m.pattern_name == "us_zip"]
+        assert len(zips) == 1
+
+    def test_uk_postcode(self, detector):
+        matches = detector.scan("London: SW1A 1AA")
+        codes = [m for m in matches if m.pattern_name == "uk_postcode"]
+        assert len(codes) == 1
+
+    def test_brazil_cep(self, detector):
+        matches = detector.scan("CEP: 01310-100")
+        ceps = [m for m in matches if m.pattern_name == "br_cep"]
+        assert len(ceps) == 1
+
+    def test_canada_postal(self, detector):
+        matches = detector.scan("Toronto: M5V 3L9")
+        codes = [m for m in matches if m.pattern_name == "ca_postal"]
+        assert len(codes) == 1
+
+
+class TestAddresses:
+    def test_street_address(self, detector):
+        matches = detector.scan("I live at 123 Main Street")
+        addrs = [m for m in matches if m.pattern_name == "street_address"]
+        assert len(addrs) == 1
+
+    def test_brazilian_address(self, detector):
+        matches = detector.scan("Endereço: Rua das Flores, 456")
+        addrs = [m for m in matches if m.pattern_name == "street_address"]
+        assert len(addrs) == 1
+
+    def test_po_box(self, detector):
+        matches = detector.scan("Send to P.O. Box 12345")
+        boxes = [m for m in matches if m.pattern_name == "po_box"]
+        assert len(boxes) == 1
+
+
 class TestGlobalPII:
     def test_us_ssn(self, detector):
         matches = detector.scan("SSN: 123-45-6789")

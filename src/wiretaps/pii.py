@@ -133,10 +133,65 @@ class PIIPatterns:
     # ==================== UNIVERSAL ====================
     EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
 
-    # Phone: must start with + or have parentheses/dashes
+    # Phone: international format with + or parentheses
     PHONE_INTL = re.compile(
         r"(?:\+[1-9]\d{0,2}[-.\s]?\(?\d{1,4}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,9}|\(\d{2,4}\)[-.\s]?\d{4,5}[-.\s]?\d{4})"
     )
+
+    # US Phone (XXX) XXX-XXXX or XXX-XXX-XXXX
+    PHONE_US = re.compile(r"\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}")
+
+    # UK Phone (starts with 0, 10-11 digits)
+    PHONE_UK = re.compile(r"\b0\d{2,4}[-.\s]?\d{3,4}[-.\s]?\d{3,4}\b")
+
+    # ==================== IP ADDRESSES ====================
+    # IPv4
+    IPV4 = re.compile(
+        r"\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b"
+    )
+
+    # IPv6 (simplified - catches most formats)
+    IPV6 = re.compile(r"\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b")
+
+    # ==================== POSTAL CODES ====================
+    # US ZIP Code (5 digits or 5+4)
+    US_ZIP = re.compile(r"\b\d{5}(?:-\d{4})?\b")
+
+    # UK Postcode (e.g., SW1A 1AA, M1 1AE)
+    UK_POSTCODE = re.compile(
+        r"\b[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}\b", re.IGNORECASE
+    )
+
+    # Brazilian CEP (XXXXX-XXX)
+    BR_CEP = re.compile(r"\b\d{5}-?\d{3}\b")
+
+    # German PLZ (5 digits)
+    DE_PLZ = re.compile(r"\b\d{5}\b")
+
+    # French Code Postal (5 digits)
+    FR_CP = re.compile(r"\b\d{5}\b")
+
+    # Canadian Postal Code (A1A 1A1)
+    CA_POSTAL = re.compile(r"\b[A-Z]\d[A-Z]\s?\d[A-Z]\d\b", re.IGNORECASE)
+
+    # Australian Postcode (4 digits)
+    AU_POSTCODE = re.compile(r"\b\d{4}\b")
+
+    # ==================== PHYSICAL ADDRESS PATTERNS ====================
+    # US/UK style: number + street name (123 Main Street)
+    STREET_ADDRESS_US = re.compile(
+        r"\b\d{1,5}\s+[\w\s]{1,30}\s+(?:street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln|way|court|ct|place|pl|circle|cir|terrace|ter|highway|hwy)\b",
+        re.IGNORECASE
+    )
+
+    # Brazilian/Latin style: street name + number (Rua das Flores, 456)
+    STREET_ADDRESS_BR = re.compile(
+        r"(?:rua|avenida|av|alameda|travessa|estrada|calle|carrera)\s+[\w\s]+[,\s]+\d+",
+        re.IGNORECASE
+    )
+
+    # PO Box
+    PO_BOX = re.compile(r"\b(?:p\.?o\.?\s*box|caixa\s*postal|apartado)\s*\d+\b", re.IGNORECASE)
 
     # ==================== AMERICAS ====================
     # US Social Security Number (XXX-XX-XXXX)
@@ -275,6 +330,20 @@ class PIIDetector:
             # Universal
             ("email", PIIPatterns.EMAIL, "medium"),
             ("phone", PIIPatterns.PHONE_INTL, "medium"),
+            ("phone_us", PIIPatterns.PHONE_US, "medium"),
+            ("phone_uk", PIIPatterns.PHONE_UK, "medium"),
+            # IP Addresses
+            ("ipv4", PIIPatterns.IPV4, "medium"),
+            ("ipv6", PIIPatterns.IPV6, "medium"),
+            # Postal Codes
+            ("us_zip", PIIPatterns.US_ZIP, "low"),
+            ("uk_postcode", PIIPatterns.UK_POSTCODE, "low"),
+            ("br_cep", PIIPatterns.BR_CEP, "low"),
+            ("ca_postal", PIIPatterns.CA_POSTAL, "low"),
+            # Addresses
+            ("street_address", PIIPatterns.STREET_ADDRESS_US, "medium"),
+            ("street_address", PIIPatterns.STREET_ADDRESS_BR, "medium"),
+            ("po_box", PIIPatterns.PO_BOX, "low"),
             # Americas
             ("us_ssn", PIIPatterns.US_SSN, "critical"),
             ("us_itin", PIIPatterns.US_ITIN, "critical"),
