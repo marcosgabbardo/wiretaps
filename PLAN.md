@@ -5,13 +5,13 @@
 **Website:** https://wiretaps.ai
 **Repo:** https://github.com/marcosgabbardo/wiretaps
 **Modelo:** Open-core (OSS gratuito + Enterprise pago)
-**Status:** v0.1.0 - Core implementado ✅
+**Status:** v0.5.1 - Redact mode + Dashboard TUI ✅
 
 ---
 
-## ✅ Progresso
+## ✅ Concluído
 
-### Concluído
+### Core (v0.1.0)
 - [x] Nome definido: **wiretaps**
 - [x] Domínio registrado: **wiretaps.ai**
 - [x] Repo GitHub criado
@@ -25,51 +25,52 @@
 - [x] GitHub Actions CI
 - [x] README completo
 
-### Próximos passos
-- [ ] Testar proxy com OpenAI API real
-- [ ] Dashboard TUI (textual)
-- [ ] Documentação (docs site)
-- [ ] Publicar no PyPI
-- [ ] Landing page (wiretaps.ai)
-- [ ] Launch HN
+### PII Detection (v0.2.0 - v0.3.0)
+- [x] US SSN, UK NIN, EU patterns
+- [x] IBAN, AWS keys, GitHub tokens
+- [x] Phone numbers (internacional)
+- [x] IP addresses
+- [x] Postal codes
+- [x] Street addresses
+
+### Dashboard TUI (v0.4.x)
+- [x] Dashboard com Textual
+- [x] Detail panel on row highlight
+- [x] Cursor position preserved on refresh
+- [x] Screenshot no README
+
+### Redact Mode (v0.5.x)
+- [x] Mask PII before sending to LLM
+- [x] Track redacted status in storage
+- [x] Show redacted indicator in dashboard
+- [x] Testado com OpenAI e Anthropic APIs ✅
+
+### Marketing
+- [x] Landing page wiretaps.ai (Cloudflare Pages)
+- [x] Mobile layout ajustado
 
 ---
 
-## 🗓️ Timeline Atualizado
+## 🚀 Próximos Passos
 
-### Semana 1-2 ✅ DONE
-- [x] Setup repo, estrutura, CI
-- [x] Proxy básico
-- [x] PII detection
-- [x] CLI
+### Publicação
+- [ ] Publicar no **PyPI** (`pip install wiretaps`)
+- [ ] Documentação (docs site com mkdocs?)
 
-### Semana 3-4 (ATUAL)
-- [ ] Testar com APIs reais (OpenAI, Anthropic)
-- [ ] Dashboard TUI com textual
-- [ ] Melhorar logging
-- [ ] Documentação básica
+### Integração
+- [ ] Integração Clawdbot (plugin ou skill)
 
-### Semana 5-6
-- [ ] Landing page wiretaps.ai
-- [ ] Publicar PyPI (pip install wiretaps)
-- [ ] Integração Clawdbot
-
-### Semana 7-8
-- [ ] Polish, bug fixes
+### Launch
 - [ ] Blog post técnico
-- [ ] Preparar launch
-
-### Semana 9-10
-- [ ] Launch HN
+- [ ] **Launch HN**
 - [ ] Twitter thread
-- [ ] Reddit communities
-- [ ] Collect feedback
+- [ ] Reddit communities (r/LocalLLaMA, r/MachineLearning)
 
 ---
 
 ## 📊 Métricas de Sucesso
 
-### Launch (Semana 10)
+### Launch
 - [ ] 100+ stars GitHub
 - [ ] 50+ pip installs
 - [ ] Top 10 HN (idealmente front page)
