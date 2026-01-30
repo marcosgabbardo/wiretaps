@@ -128,39 +128,124 @@ BIP39_WORDS = {
 
 
 class PIIPatterns:
-    """Built-in PII detection patterns."""
+    """Built-in PII detection patterns for global coverage."""
 
-    # Personal identifiers
+    # ==================== UNIVERSAL ====================
     EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
 
-    # Phone: must start with + or have parentheses/dashes (to avoid matching plain numbers)
+    # Phone: must start with + or have parentheses/dashes
     PHONE_INTL = re.compile(
         r"(?:\+[1-9]\d{0,2}[-.\s]?\(?\d{1,4}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,9}|\(\d{2,4}\)[-.\s]?\d{4,5}[-.\s]?\d{4})"
     )
 
-    SSN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
+    # ==================== AMERICAS ====================
+    # US Social Security Number (XXX-XX-XXXX)
+    US_SSN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
 
-    # Brazilian CPF
-    CPF = re.compile(r"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b")
+    # US Individual Taxpayer Identification Number (9XX-XX-XXXX)
+    US_ITIN = re.compile(r"\b9\d{2}-\d{2}-\d{4}\b")
 
-    # Brazilian CNPJ
-    CNPJ = re.compile(r"\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b")
+    # Canadian Social Insurance Number (XXX-XXX-XXX)
+    CA_SIN = re.compile(r"\b\d{3}[-\s]?\d{3}[-\s]?\d{3}\b")
 
-    # Financial
+    # Brazilian CPF (XXX.XXX.XXX-XX)
+    BR_CPF = re.compile(r"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b")
+
+    # Brazilian CNPJ (XX.XXX.XXX/XXXX-XX)
+    BR_CNPJ = re.compile(r"\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b")
+
+    # Mexican CURP (18 alphanumeric)
+    MX_CURP = re.compile(r"\b[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d\b")
+
+    # Mexican RFC (12-13 alphanumeric)
+    MX_RFC = re.compile(r"\b[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}\b")
+
+    # ==================== EUROPE ====================
+    # UK National Insurance Number (AB123456C)
+    UK_NIN = re.compile(
+        r"\b[A-CEGHJ-PR-TW-Z][A-CEGHJ-NPR-TW-Z]\s?\d{2}\s?\d{2}\s?\d{2}\s?[A-D]\b", re.IGNORECASE
+    )
+
+    # German ID/Passport Number (9 alphanumeric)
+    DE_ID = re.compile(r"\b[CFGHJKLMNPRTVWXYZ0-9]{9}\b")
+
+    # French INSEE/NIR (15 digits, social security)
+    FR_NIR = re.compile(r"\b[12]\s?\d{2}\s?\d{2}\s?\d{2}\s?\d{3}\s?\d{3}\s?\d{2}\b")
+
+    # Spanish DNI (8 digits + letter)
+    ES_DNI = re.compile(r"\b\d{8}[A-Z]\b")
+
+    # Spanish NIE (X/Y/Z + 7 digits + letter)
+    ES_NIE = re.compile(r"\b[XYZ]\d{7}[A-Z]\b")
+
+    # Italian Codice Fiscale (16 alphanumeric)
+    IT_CF = re.compile(r"\b[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]\b")
+
+    # Portuguese NIF (9 digits)
+    PT_NIF = re.compile(r"\b[125689]\d{8}\b")
+
+    # Dutch BSN (9 digits)
+    NL_BSN = re.compile(r"\b\d{9}\b")
+
+    # Belgian National Number (YY.MM.DD-XXX.XX)
+    BE_NN = re.compile(r"\b\d{2}\.\d{2}\.\d{2}-\d{3}\.\d{2}\b")
+
+    # Swiss AHV/AVS (756.XXXX.XXXX.XX)
+    CH_AHV = re.compile(r"\b756\.\d{4}\.\d{4}\.\d{2}\b")
+
+    # EU VAT Number (country code + 8-12 chars)
+    EU_VAT = re.compile(
+        r"\b(AT|BE|BG|CY|CZ|DE|DK|EE|EL|ES|FI|FR|HR|HU|IE|IT|LT|LU|LV|MT|NL|PL|PT|RO|SE|SI|SK)[A-Z0-9]{8,12}\b"
+    )
+
+    # ==================== ASIA-PACIFIC ====================
+    # Australian Tax File Number (XXX XXX XXX)
+    AU_TFN = re.compile(r"\b\d{3}\s?\d{3}\s?\d{3}\b")
+
+    # Indian Aadhaar (12 digits, groups of 4)
+    IN_AADHAAR = re.compile(r"\b\d{4}\s?\d{4}\s?\d{4}\b")
+
+    # Indian PAN (AAAAA0000A)
+    IN_PAN = re.compile(r"\b[A-Z]{5}\d{4}[A-Z]\b")
+
+    # Japanese My Number (12 digits)
+    JP_MY_NUMBER = re.compile(r"\b\d{4}\s?\d{4}\s?\d{4}\b")
+
+    # South Korean RRN (YYMMDD-XXXXXXX)
+    KR_RRN = re.compile(r"\b\d{6}-[1-4]\d{6}\b")
+
+    # ==================== PASSPORTS ====================
+    # US Passport (9 digits or alphanumeric)
+    PASSPORT_US = re.compile(r"\b[A-Z]?\d{8,9}\b")
+
+    # UK Passport (9 digits)
+    PASSPORT_UK = re.compile(r"\b\d{9}\b")
+
+    # Generic passport (2 letters + 7 digits, common format)
+    PASSPORT_GENERIC = re.compile(r"\b[A-Z]{2}\d{7}\b")
+
+    # ==================== FINANCIAL ====================
+    # Credit Cards (Visa, MC, Amex, Discover)
     CREDIT_CARD = re.compile(
         r"\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})\b"
     )
 
     CREDIT_CARD_FORMATTED = re.compile(r"\b(?:\d{4}[-\s]?){3}\d{4}\b")
 
-    # Crypto
+    # IBAN (International Bank Account Number)
+    IBAN = re.compile(r"\b[A-Z]{2}\d{2}[A-Z0-9]{4,30}\b")
+
+    # SWIFT/BIC Code
+    SWIFT_BIC = re.compile(r"\b[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}([A-Z0-9]{3})?\b")
+
+    # ==================== CRYPTO ====================
     BTC_ADDRESS = re.compile(r"\b(?:bc1|[13])[a-zA-HJ-NP-Z0-9]{25,62}\b")
 
     ETH_ADDRESS = re.compile(r"\b0x[a-fA-F0-9]{40}\b")
 
     PRIVATE_KEY_HEX = re.compile(r"\b(?:0x)?[a-fA-F0-9]{64}\b")
 
-    # API Keys / Secrets (common patterns)
+    # ==================== API KEYS ====================
     API_KEY_GENERIC = re.compile(
         r"\b(?:sk|pk|api|key|secret|token|auth|bearer)[-_]?[a-zA-Z0-9]{20,}\b", re.IGNORECASE
     )
@@ -168,6 +253,12 @@ class PIIPatterns:
     OPENAI_KEY = re.compile(r"\bsk-[a-zA-Z0-9]{48}\b")
 
     ANTHROPIC_KEY = re.compile(r"\bsk-ant-[a-zA-Z0-9_-]{50,}\b")
+
+    AWS_ACCESS_KEY = re.compile(r"\bAKIA[0-9A-Z]{16}\b")
+
+    AWS_SECRET_KEY = re.compile(r"\b[A-Za-z0-9/+=]{40}\b")
+
+    GITHUB_TOKEN = re.compile(r"\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}\b")
 
 
 class PIIDetector:
@@ -181,19 +272,50 @@ class PIIDetector:
 
     def __init__(self, custom_patterns: list[dict] | None = None):
         self.patterns = [
+            # Universal
             ("email", PIIPatterns.EMAIL, "medium"),
             ("phone", PIIPatterns.PHONE_INTL, "medium"),
-            ("ssn", PIIPatterns.SSN, "critical"),
-            ("cpf", PIIPatterns.CPF, "high"),
-            ("cnpj", PIIPatterns.CNPJ, "medium"),
+            # Americas
+            ("us_ssn", PIIPatterns.US_SSN, "critical"),
+            ("us_itin", PIIPatterns.US_ITIN, "critical"),
+            ("ca_sin", PIIPatterns.CA_SIN, "critical"),
+            ("br_cpf", PIIPatterns.BR_CPF, "high"),
+            ("br_cnpj", PIIPatterns.BR_CNPJ, "medium"),
+            ("mx_curp", PIIPatterns.MX_CURP, "high"),
+            ("mx_rfc", PIIPatterns.MX_RFC, "medium"),
+            # Europe
+            ("uk_nin", PIIPatterns.UK_NIN, "critical"),
+            ("de_id", PIIPatterns.DE_ID, "high"),
+            ("fr_nir", PIIPatterns.FR_NIR, "critical"),
+            ("es_dni", PIIPatterns.ES_DNI, "high"),
+            ("es_nie", PIIPatterns.ES_NIE, "high"),
+            ("it_cf", PIIPatterns.IT_CF, "high"),
+            ("pt_nif", PIIPatterns.PT_NIF, "medium"),
+            ("be_nn", PIIPatterns.BE_NN, "high"),
+            ("ch_ahv", PIIPatterns.CH_AHV, "high"),
+            ("eu_vat", PIIPatterns.EU_VAT, "medium"),
+            # Asia-Pacific
+            ("au_tfn", PIIPatterns.AU_TFN, "critical"),
+            ("in_aadhaar", PIIPatterns.IN_AADHAAR, "critical"),
+            ("in_pan", PIIPatterns.IN_PAN, "high"),
+            ("kr_rrn", PIIPatterns.KR_RRN, "critical"),
+            # Passports
+            ("passport", PIIPatterns.PASSPORT_GENERIC, "critical"),
+            # Financial
             ("credit_card", PIIPatterns.CREDIT_CARD, "critical"),
             ("credit_card", PIIPatterns.CREDIT_CARD_FORMATTED, "critical"),
+            ("iban", PIIPatterns.IBAN, "high"),
+            ("swift_bic", PIIPatterns.SWIFT_BIC, "medium"),
+            # Crypto
             ("btc_address", PIIPatterns.BTC_ADDRESS, "high"),
             ("eth_address", PIIPatterns.ETH_ADDRESS, "high"),
             ("private_key", PIIPatterns.PRIVATE_KEY_HEX, "critical"),
+            # API Keys
             ("api_key", PIIPatterns.API_KEY_GENERIC, "critical"),
             ("openai_key", PIIPatterns.OPENAI_KEY, "critical"),
             ("anthropic_key", PIIPatterns.ANTHROPIC_KEY, "critical"),
+            ("aws_access_key", PIIPatterns.AWS_ACCESS_KEY, "critical"),
+            ("github_token", PIIPatterns.GITHUB_TOKEN, "critical"),
         ]
 
         # Add custom patterns

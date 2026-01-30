@@ -58,13 +58,55 @@ class TestCryptoDetection:
 class TestBrazilianPII:
     def test_cpf(self, detector):
         matches = detector.scan("CPF: 123.456.789-00")
-        cpf = [m for m in matches if m.pattern_name == "cpf"]
+        cpf = [m for m in matches if m.pattern_name == "br_cpf"]
         assert len(cpf) == 1
 
     def test_cpf_unformatted(self, detector):
         matches = detector.scan("CPF: 12345678900")
-        cpf = [m for m in matches if m.pattern_name == "cpf"]
+        cpf = [m for m in matches if m.pattern_name == "br_cpf"]
         assert len(cpf) == 1
+
+
+class TestGlobalPII:
+    def test_us_ssn(self, detector):
+        matches = detector.scan("SSN: 123-45-6789")
+        ssn = [m for m in matches if m.pattern_name == "us_ssn"]
+        assert len(ssn) == 1
+
+    def test_uk_nin(self, detector):
+        matches = detector.scan("NIN: AB123456C")
+        nin = [m for m in matches if m.pattern_name == "uk_nin"]
+        assert len(nin) == 1
+
+    def test_spanish_dni(self, detector):
+        matches = detector.scan("DNI: 12345678A")
+        dni = [m for m in matches if m.pattern_name == "es_dni"]
+        assert len(dni) == 1
+
+    def test_italian_cf(self, detector):
+        matches = detector.scan("CF: RSSMRA85M01H501Z")
+        cf = [m for m in matches if m.pattern_name == "it_cf"]
+        assert len(cf) == 1
+
+    def test_indian_aadhaar(self, detector):
+        matches = detector.scan("Aadhaar: 1234 5678 9012")
+        aadhaar = [m for m in matches if m.pattern_name == "in_aadhaar"]
+        assert len(aadhaar) == 1
+
+    def test_iban(self, detector):
+        matches = detector.scan("IBAN: DE89370400440532013000")
+        iban = [m for m in matches if m.pattern_name == "iban"]
+        assert len(iban) == 1
+
+    def test_aws_key(self, detector):
+        matches = detector.scan("AWS Key: AKIAIOSFODNN7EXAMPLE")
+        aws = [m for m in matches if m.pattern_name == "aws_access_key"]
+        assert len(aws) == 1
+
+    def test_github_token(self, detector):
+        matches = detector.scan("Token: ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+        gh = [m for m in matches if m.pattern_name == "github_token"]
+        assert len(gh) == 1
 
 
 class TestCreditCard:
