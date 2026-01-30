@@ -445,14 +445,21 @@
                 display: none;
             }
             
-            .diagram pre {
-                font-size: 0.75rem;
-                padding: 20px;
+            .diagram {
+                display: none;
             }
             
             .install {
                 flex-direction: column;
                 gap: 15px;
+            }
+            
+            .screenshot-frame {
+                padding: 4px;
+            }
+            
+            .screenshot-frame img {
+                border-radius: 6px;
             }
         }
     </style>
@@ -518,7 +525,7 @@
             <div class="container">
                 <h2>📊 Live Dashboard</h2>
                 <div class="screenshot-frame">
-                    <img src="https://raw.githubusercontent.com/marcosgabbardo/wiretaps/main/assets/dashboard.png" alt="wiretaps dashboard showing real-time traffic monitoring">
+                    <img src="dashboard.png" alt="wiretaps dashboard showing real-time traffic monitoring">
                 </div>
             </div>
         </section>
