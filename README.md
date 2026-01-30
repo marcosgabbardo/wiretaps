@@ -227,6 +227,45 @@ pii:
     - type: phone
 ```
 
+## Usage Statistics
+
+View usage statistics and PII detection metrics:
+
+```bash
+# Show overall stats
+wiretaps stats
+
+# Output as JSON (for scripts)
+wiretaps stats --json
+
+# Stats grouped by day
+wiretaps stats --by-day
+
+# Stats grouped by hour
+wiretaps stats --by-hour
+
+# Filter by API key (multi-tenant)
+wiretaps stats --api-key sk-xxx
+```
+
+Example output:
+```
+📊 wiretaps Statistics
+
+  Total Requests: 1,234
+  Total Tokens: 456,789
+
+  PII Detections: 23 (1.86%)
+  Blocked: 5
+  Redacted: 18
+  Errors: 0
+
+Top PII Types:
+  - email: 15
+  - phone: 8
+  - us_ssn: 3
+```
+
 ## Webhook Alerts
 
 Get notified when PII is detected:

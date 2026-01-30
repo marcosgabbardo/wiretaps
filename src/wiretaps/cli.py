@@ -203,6 +203,102 @@ def export(output_format: str, output: str, since: str | None, until: str | None
 
 
 @main.command()
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@click.option("--by-day", is_flag=True, help="Show stats by day")
+@click.option("--by-hour", is_flag=True, help="Show stats by hour")
+@click.option("--api-key", help="Filter by API key")
+def stats(as_json: bool, by_day: bool, by_hour: bool, api_key: str | None) -> None:
+    """Show usage statistics."""
+    import json
+
+    from rich.table import Table
+
+    from wiretaps.storage import Storage
+
+    storage = Storage()
+
+    if by_day:
+        data = storage.get_stats_by_day(api_key=api_key)
+        if as_json:
+            console.print(json.dumps(data, indent=2))
+            return
+
+        table = Table(title="Stats by Day")
+        table.add_column("Day", style="cyan")
+        table.add_column("Requests", justify="right")
+        table.add_column("Tokens", justify="right")
+        table.add_column("PII Detections", justify="right", style="yellow")
+        table.add_column("Blocked", justify="right", style="red")
+
+        for row in data:
+            table.add_row(
+                row["day"],
+                str(row["requests"]),
+                f"{row['tokens']:,}",
+                str(row["pii_detections"]),
+                str(row["blocked"]),
+            )
+        console.print(table)
+        return
+
+    if by_hour:
+        data = storage.get_stats_by_hour(api_key=api_key)
+        if as_json:
+            console.print(json.dumps(data, indent=2))
+            return
+
+        table = Table(title="Stats by Hour")
+        table.add_column("Hour", style="cyan")
+        table.add_column("Requests", justify="right")
+        table.add_column("Tokens", justify="right")
+        table.add_column("PII Detections", justify="right", style="yellow")
+        table.add_column("Blocked", justify="right", style="red")
+
+        for row in data:
+            table.add_row(
+                row["hour"],
+                str(row["requests"]),
+                f"{row['tokens']:,}",
+                str(row["pii_detections"]),
+                str(row["blocked"]),
+            )
+        console.print(table)
+        return
+
+    # Default: overall stats
+    overall = storage.get_stats(api_key=api_key)
+    top_pii = storage.get_top_pii_types(limit=5, api_key=api_key)
+
+    if as_json:
+        output = {
+            "overall": overall,
+            "top_pii_types": top_pii,
+        }
+        console.print(json.dumps(output, indent=2))
+        return
+
+    # Pretty print
+    console.print("\n[bold cyan]📊 wiretaps Statistics[/bold cyan]\n")
+
+    console.print(f"  [bold]Total Requests:[/bold] {overall['total_requests']:,}")
+    console.print(f"  [bold]Total Tokens:[/bold] {overall['total_tokens']:,}")
+    console.print()
+
+    pii_color = "red" if overall["pii_percentage"] > 10 else "yellow" if overall["pii_percentage"] > 0 else "green"
+    console.print(f"  [bold]PII Detections:[/bold] [{pii_color}]{overall['requests_with_pii']:,}[/{pii_color}] ({overall['pii_percentage']}%)")
+    console.print(f"  [bold]Blocked:[/bold] [red]{overall['blocked_requests']:,}[/red]")
+    console.print(f"  [bold]Redacted:[/bold] [cyan]{overall['redacted_requests']:,}[/cyan]")
+    console.print(f"  [bold]Errors:[/bold] {overall['errors']:,}")
+
+    if top_pii:
+        console.print("\n[bold]Top PII Types:[/bold]")
+        for item in top_pii:
+            console.print(f"  - {item['type']}: {item['count']}")
+
+    console.print()
+
+
+@main.command()
 def dashboard() -> None:
     """Open the live dashboard (TUI)."""
     from wiretaps.dashboard import run_dashboard

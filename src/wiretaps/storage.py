@@ -204,30 +204,142 @@ class Storage:
 
         return entries
 
-    def get_stats(self) -> dict:
+    def get_stats(self, api_key: str | None = None) -> dict:
         """Get aggregate statistics."""
         with sqlite3.connect(self.db_path) as conn:
+            where_clause = "WHERE 1=1"
+            params: list = []
+
+            if api_key:
+                where_clause += " AND api_key = ?"
+                params.append(api_key)
+
             # Total requests
-            total = conn.execute("SELECT COUNT(*) FROM logs").fetchone()[0]
+            total = conn.execute(f"SELECT COUNT(*) FROM logs {where_clause}", params).fetchone()[0]
 
             # Total tokens
-            tokens = conn.execute("SELECT SUM(tokens) FROM logs").fetchone()[0] or 0
+            tokens = conn.execute(f"SELECT SUM(tokens) FROM logs {where_clause}", params).fetchone()[0] or 0
 
             # Requests with PII
             pii_count = conn.execute(
-                "SELECT COUNT(*) FROM logs WHERE pii_types != '[]'"
+                f"SELECT COUNT(*) FROM logs {where_clause} AND pii_types != '[]'", params
+            ).fetchone()[0]
+
+            # Blocked requests
+            blocked_count = conn.execute(
+                f"SELECT COUNT(*) FROM logs {where_clause} AND blocked = 1", params
+            ).fetchone()[0]
+
+            # Redacted requests
+            redacted_count = conn.execute(
+                f"SELECT COUNT(*) FROM logs {where_clause} AND redacted = 1", params
             ).fetchone()[0]
 
             # Errors
-            errors = conn.execute("SELECT COUNT(*) FROM logs WHERE error IS NOT NULL").fetchone()[0]
+            errors = conn.execute(
+                f"SELECT COUNT(*) FROM logs {where_clause} AND error IS NOT NULL", params
+            ).fetchone()[0]
 
             return {
                 "total_requests": total,
                 "total_tokens": tokens,
                 "requests_with_pii": pii_count,
-                "pii_percentage": (pii_count / total * 100) if total > 0 else 0,
+                "pii_percentage": round((pii_count / total * 100), 2) if total > 0 else 0,
+                "blocked_requests": blocked_count,
+                "redacted_requests": redacted_count,
                 "errors": errors,
             }
+
+    def get_stats_by_day(self, days: int = 7, api_key: str | None = None) -> list[dict]:
+        """Get statistics grouped by day."""
+        with sqlite3.connect(self.db_path) as conn:
+            where_clause = "WHERE 1=1"
+            params: list = []
+
+            if api_key:
+                where_clause += " AND api_key = ?"
+                params.append(api_key)
+
+            query = f"""
+                SELECT
+                    date(timestamp) as day,
+                    COUNT(*) as requests,
+                    SUM(tokens) as tokens,
+                    SUM(CASE WHEN pii_types != '[]' THEN 1 ELSE 0 END) as pii_detections,
+                    SUM(CASE WHEN blocked = 1 THEN 1 ELSE 0 END) as blocked
+                FROM logs
+                {where_clause}
+                GROUP BY date(timestamp)
+                ORDER BY day DESC
+                LIMIT ?
+            """
+            params.append(days)
+
+            cursor = conn.execute(query, params)
+            rows = cursor.fetchall()
+
+            return [
+                {
+                    "day": row[0],
+                    "requests": row[1],
+                    "tokens": row[2] or 0,
+                    "pii_detections": row[3],
+                    "blocked": row[4],
+                }
+                for row in rows
+            ]
+
+    def get_stats_by_hour(self, hours: int = 24, api_key: str | None = None) -> list[dict]:
+        """Get statistics grouped by hour."""
+        with sqlite3.connect(self.db_path) as conn:
+            where_clause = "WHERE 1=1"
+            params: list = []
+
+            if api_key:
+                where_clause += " AND api_key = ?"
+                params.append(api_key)
+
+            query = f"""
+                SELECT
+                    strftime('%Y-%m-%d %H:00', timestamp) as hour,
+                    COUNT(*) as requests,
+                    SUM(tokens) as tokens,
+                    SUM(CASE WHEN pii_types != '[]' THEN 1 ELSE 0 END) as pii_detections,
+                    SUM(CASE WHEN blocked = 1 THEN 1 ELSE 0 END) as blocked
+                FROM logs
+                {where_clause}
+                GROUP BY strftime('%Y-%m-%d %H', timestamp)
+                ORDER BY hour DESC
+                LIMIT ?
+            """
+            params.append(hours)
+
+            cursor = conn.execute(query, params)
+            rows = cursor.fetchall()
+
+            return [
+                {
+                    "hour": row[0],
+                    "requests": row[1],
+                    "tokens": row[2] or 0,
+                    "pii_detections": row[3],
+                    "blocked": row[4],
+                }
+                for row in rows
+            ]
+
+    def get_top_pii_types(self, limit: int = 10, api_key: str | None = None) -> list[dict]:
+        """Get top detected PII types."""
+        entries = self.get_logs(limit=10000, pii_only=True, api_key=api_key)
+
+        pii_counts: dict[str, int] = {}
+        for entry in entries:
+            for pii_type in entry.pii_types:
+                pii_counts[pii_type] = pii_counts.get(pii_type, 0) + 1
+
+        sorted_types = sorted(pii_counts.items(), key=lambda x: x[1], reverse=True)[:limit]
+
+        return [{"type": t, "count": c} for t, c in sorted_types]
 
     def clear(self) -> None:
         """Clear all logs (use with caution!)."""
