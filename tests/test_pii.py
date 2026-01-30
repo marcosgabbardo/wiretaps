@@ -86,6 +86,14 @@ class TestAPIKeys:
         keys = [m for m in matches if "key" in m.pattern_name.lower()]
         assert len(keys) >= 1
 
+    def test_anthropic_key(self, detector):
+        # Fake key with same format (real keys blocked by GitHub secret scanning)
+        key = "sk-ant-api03-" + "a" * 50 + "_" + "b" * 40 + "-test"
+        matches = detector.scan(f"Key: {key}")
+        keys = [m for m in matches if m.pattern_name == "anthropic_key"]
+        assert len(keys) == 1
+        assert matches[0].severity == "critical"
+
 
 class TestRedaction:
     def test_redact_email(self, detector):

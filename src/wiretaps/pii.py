@@ -167,7 +167,7 @@ class PIIPatterns:
 
     OPENAI_KEY = re.compile(r"\bsk-[a-zA-Z0-9]{48}\b")
 
-    ANTHROPIC_KEY = re.compile(r"\bsk-ant-[a-zA-Z0-9-]{90,}\b")
+    ANTHROPIC_KEY = re.compile(r"\bsk-ant-[a-zA-Z0-9_-]{50,}\b")
 
 
 class PIIDetector:
