@@ -37,6 +37,8 @@ AI agents have access to your emails, files, and credentials. But do you know wh
 
 - **🔍 Full Visibility** — Log every prompt, response, and tool call
 - **🚨 PII Detection** — Auto-detect emails, phone numbers, SSNs, credit cards
+- **🛡️ Redact Mode** — Mask PII before it reaches the LLM
+- **✅ Allowlist** — Let specific values pass through (your email, company domain)
 - **₿ Crypto Detection** — Flag wallet addresses, private keys, seed phrases
 - **📊 Live Dashboard** — Terminal UI to monitor traffic in real-time
 - **🔌 Zero Code Changes** — Just set `OPENAI_BASE_URL` and go
@@ -103,6 +105,65 @@ patterns:
   - name: internal_id
     regex: "INTERNAL-[A-Z]{3}-[0-9]{6}"
     severity: high
+```
+
+## Redact Mode
+
+Automatically mask PII **before** it reaches the LLM:
+
+```bash
+wiretaps start --redact
+```
+
+```
+Original:  "My email is john@example.com and SSN is 123-45-6789"
+Redacted:  "My email is [EMAIL] and SSN is [US_SSN]"
+```
+
+The LLM never sees the real data. Your audit logs still capture the original for compliance.
+
+## Allowlist
+
+Allow specific values to pass through without being flagged as PII:
+
+```bash
+# Allow your own email
+wiretaps allowlist add -t email -v "me@mycompany.com"
+
+# Allow all emails from your company domain
+wiretaps allowlist add -t email -p ".*@mycompany\.com"
+
+# Allow a specific phone number
+wiretaps allowlist add -t phone -v "+5511999999999"
+
+# Allow all phone numbers (use with caution)
+wiretaps allowlist add -t phone
+
+# List all rules
+wiretaps allowlist list
+
+# Remove a rule
+wiretaps allowlist remove -t email -v "me@mycompany.com"
+
+# Clear all rules
+wiretaps allowlist clear
+```
+
+Or configure in `~/.wiretaps/config.yaml`:
+
+```yaml
+pii:
+  allowlist:
+    # Exact value
+    - type: email
+      value: "ceo@company.com"
+    
+    # Regex pattern
+    - type: email
+      pattern: ".*@company\\.com"
+    
+    # Allow entire type
+    - type: phone
 ```
 
 ## Supported LLM APIs
