@@ -54,7 +54,7 @@
 ## 🚀 Próximos Passos
 
 ### Publicação
-- [ ] Publicar no **PyPI** (`pip install wiretaps`)
+- [x] Publicar no **PyPI** (`pip install wiretaps`) ✅
 - [ ] Documentação (docs site com mkdocs?)
 
 ### Integração
