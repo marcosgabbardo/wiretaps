@@ -210,7 +210,7 @@ class TestRedaction:
         text = "Contact user@example.com for help"
         redacted = detector.redact(text)
         assert "user@example.com" not in redacted
-        assert "[REDACTED]" in redacted
+        assert "[EMAIL]" in redacted
 
     def test_redact_multiple(self, detector):
         text = "Email: test@test.com, Phone: +1-555-123-4567"

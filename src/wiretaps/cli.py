@@ -21,7 +21,8 @@ def main() -> None:
 @click.option("--host", default="127.0.0.1", help="Host to bind to")
 @click.option("--port", default=8080, help="Port to bind to")
 @click.option("--target", default="https://api.openai.com", help="Target API URL")
-def start(host: str, port: int, target: str) -> None:
+@click.option("--redact", is_flag=True, help="Redact PII before sending to LLM")
+def start(host: str, port: int, target: str, redact: bool) -> None:
     """Start the wiretaps proxy server."""
     import asyncio
 
@@ -30,12 +31,14 @@ def start(host: str, port: int, target: str) -> None:
     console.print(f"[bold green]🔌 wiretaps v{__version__}[/bold green]")
     console.print(f"   Proxy:  [cyan]http://{host}:{port}[/cyan]")
     console.print(f"   Target: [cyan]{target}[/cyan]")
+    if redact:
+        console.print(f"   Mode:   [bold yellow]🛡️  REDACT MODE[/bold yellow] - PII will be masked before sending")
     console.print()
     console.print("[dim]Set OPENAI_BASE_URL=http://{host}:{port}/v1 in your agent[/dim]")
     console.print("[dim]Press Ctrl+C to stop[/dim]")
     console.print()
 
-    proxy = WiretapsProxy(host=host, port=port, target=target)
+    proxy = WiretapsProxy(host=host, port=port, target=target, redact_mode=redact)
 
     try:
         asyncio.run(proxy.run())

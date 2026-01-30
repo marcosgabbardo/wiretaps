@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "wiretaps"
-version = "0.4.3"
+version = "0.5.0"
 description = "See what your AI agents are sending to LLMs. MitM proxy for auditing, PII detection, and compliance."
 readme = "README.md"
 license = "MIT"

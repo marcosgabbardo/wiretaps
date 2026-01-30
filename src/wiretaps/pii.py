@@ -467,24 +467,82 @@ class PIIDetector:
         matches = self.scan(text)
         return list({m.pattern_name for m in matches})
 
-    def redact(self, text: str, replacement: str = "[REDACTED]") -> str:
+    def redact(self, text: str, replacement: str | None = None, use_type_labels: bool = True) -> str:
         """
         Redact PII from text.
 
         Args:
             text: Text to redact
-            replacement: Replacement string for PII
+            replacement: Fixed replacement string (overrides type labels)
+            use_type_labels: If True, use [EMAIL], [SSN], etc. instead of generic [REDACTED]
 
         Returns:
             Text with PII replaced
         """
         matches = self.scan(text)
+        
+        # Remove overlapping matches (keep longer match)
+        matches = self._remove_overlaps(matches)
 
         # Sort by position (reverse) to replace from end to start
         matches.sort(key=lambda m: m.start, reverse=True)
 
         result = text
         for match in matches:
-            result = result[: match.start] + replacement + result[match.end :]
+            if replacement:
+                label = replacement
+            elif use_type_labels:
+                label = f"[{match.pattern_name.upper()}]"
+            else:
+                label = "[REDACTED]"
+            result = result[: match.start] + label + result[match.end :]
 
         return result
+    
+    def _remove_overlaps(self, matches: list[PIIMatch]) -> list[PIIMatch]:
+        """Remove overlapping matches, keeping the longer one."""
+        if not matches:
+            return matches
+        
+        # Sort by start position, then by length (descending)
+        matches.sort(key=lambda m: (m.start, -(m.end - m.start)))
+        
+        result = []
+        for match in matches:
+            # Check if this match overlaps with any already accepted match
+            overlaps = False
+            for accepted in result:
+                if not (match.end <= accepted.start or match.start >= accepted.end):
+                    overlaps = True
+                    break
+            if not overlaps:
+                result.append(match)
+        
+        return result
+
+    def redact_with_map(self, text: str) -> tuple[str, dict[str, str]]:
+        """
+        Redact PII and return a map for potential restoration.
+
+        Args:
+            text: Text to redact
+
+        Returns:
+            Tuple of (redacted_text, map of placeholder -> original value)
+        """
+        matches = self.scan(text)
+        matches = self._remove_overlaps(matches)
+        matches.sort(key=lambda m: m.start, reverse=True)
+
+        result = text
+        redact_map = {}
+        counters: dict[str, int] = {}
+
+        for match in matches:
+            ptype = match.pattern_name.upper()
+            counters[ptype] = counters.get(ptype, 0) + 1
+            label = f"[{ptype}_{counters[ptype]}]"
+            redact_map[label] = match.matched_text
+            result = result[: match.start] + label + result[match.end :]
+
+        return result, redact_map

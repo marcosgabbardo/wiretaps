@@ -25,6 +25,7 @@ class ProxyConfig:
     target: str = "https://api.openai.com"
     timeout: int = 120
     pii_detection: bool = True
+    redact_mode: bool = False  # If True, redact PII before sending to LLM
 
 
 class WiretapsProxy:
@@ -40,12 +41,14 @@ class WiretapsProxy:
         port: int = 8080,
         target: str = "https://api.openai.com",
         pii_detection: bool = True,
+        redact_mode: bool = False,
     ):
         self.config = ProxyConfig(
             host=host,
             port=port,
             target=target.rstrip("/"),
             pii_detection=pii_detection,
+            redact_mode=redact_mode,
         )
         self.storage = Storage()
         self.pii_detector = PIIDetector() if pii_detection else None
@@ -71,9 +74,19 @@ class WiretapsProxy:
         except Exception:
             body_text = ""
 
+        # Original body for logging
+        original_body_text = body_text
+
         pii_types = []
+        redacted_body = None
         if self.pii_detector and body_text:
             pii_types = self.pii_detector.get_pii_types(body_text)
+            
+            # Redact PII if enabled and PII was found
+            if self.config.redact_mode and pii_types:
+                redacted_body = self.pii_detector.redact(body_text)
+                body_text = redacted_body
+                body = body_text.encode("utf-8")
 
         headers = {
             k: v
@@ -103,15 +116,18 @@ class WiretapsProxy:
                     )
 
                     duration_ms = int((time.time() - start_time) * 1000)
+                    
+                    # Log original body (not redacted) for audit purposes
                     await self._log_request(
                         method=request.method,
                         endpoint=f"/{path}",
-                        request_body=body_text,
+                        request_body=original_body_text,
                         response_body=response_body.decode("utf-8", errors="ignore"),
                         status=resp.status,
                         tokens=tokens,
                         duration_ms=duration_ms,
                         pii_types=pii_types,
+                        redacted=redacted_body is not None,
                     )
 
                     return web.Response(
@@ -159,6 +175,7 @@ class WiretapsProxy:
         duration_ms: int,
         pii_types: list,
         error: str | None = None,
+        redacted: bool = False,
     ) -> None:
         """Log request to storage."""
         entry = LogEntry(
@@ -175,7 +192,13 @@ class WiretapsProxy:
         )
         self.storage.log(entry)
 
-        pii_status = f"⚠️  PII: {', '.join(pii_types)}" if pii_types else "✓"
+        if pii_types:
+            if redacted:
+                pii_status = f"🛡️  REDACTED: {', '.join(pii_types)}"
+            else:
+                pii_status = f"⚠️  PII: {', '.join(pii_types)}"
+        else:
+            pii_status = "✓"
         print(
             f"{entry.timestamp.strftime('%H:%M:%S')} | {method} {endpoint} | {tokens} tk | {pii_status}"
         )
