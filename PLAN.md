@@ -5,7 +5,7 @@
 **Website:** https://wiretaps.ai
 **Repo:** https://github.com/marcosgabbardo/wiretaps
 **Modelo:** Open-core (OSS gratuito + Enterprise pago)
-**Status:** v0.5.1 - Redact mode + Dashboard TUI ✅
+**Status:** v0.6.0 - Allowlist support ✅
 
 ---
 
@@ -44,6 +44,13 @@
 - [x] Track redacted status in storage
 - [x] Show redacted indicator in dashboard
 - [x] Testado com OpenAI e Anthropic APIs ✅
+
+### Allowlist (v0.6.0)
+- [x] Permitir valores específicos (ex: seu email pessoal)
+- [x] Permitir padrões regex (ex: emails do domínio da empresa)
+- [x] Permitir tipos inteiros (ex: todos os phones)
+- [x] CLI: `wiretaps allowlist list|add|remove|clear`
+- [x] Config via ~/.wiretaps/config.yaml
 
 ### Marketing
 - [x] Landing page wiretaps.ai (Cloudflare Pages)
