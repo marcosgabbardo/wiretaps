@@ -4,7 +4,7 @@ wiretaps - See what your AI agents are sending to LLMs.
 A transparent MitM proxy for auditing AI agent traffic.
 """
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 __author__ = "Marcos Gabbardo"
 __email__ = "mgabbardo@protonmail.com"
 
