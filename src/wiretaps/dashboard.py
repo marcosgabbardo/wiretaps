@@ -57,8 +57,16 @@ class RequestTable(DataTable):
         self.zebra_stripes = True
 
     def on_mount(self) -> None:
-        self.add_columns("Time", "Method", "Endpoint", "Status", "Tokens", "PII")
+        self.add_columns("Time", "Method", "Endpoint", "Status", "Tokens", "PII", "Key")
         self.refresh_data()
+
+    def _mask_api_key(self, api_key: str | None) -> str:
+        """Mask API key for display."""
+        if not api_key:
+            return "-"
+        if len(api_key) <= 8:
+            return "***"
+        return api_key[:4] + "..." + api_key[-4:]
 
     def refresh_data(self, pii_only: bool = False) -> None:
         """Refresh table with latest data, preserving cursor position."""
@@ -96,6 +104,9 @@ class RequestTable(DataTable):
             # Truncate endpoint
             endpoint = entry.endpoint[:40] + "..." if len(entry.endpoint) > 40 else entry.endpoint
 
+            # API key (masked)
+            api_key_display = Text(self._mask_api_key(entry.api_key), style="dim")
+
             self.add_row(
                 time_str,
                 entry.method,
@@ -103,6 +114,7 @@ class RequestTable(DataTable):
                 status,
                 f"{entry.tokens:,}",
                 pii,
+                api_key_display,
                 key=str(entry.id),
             )
 

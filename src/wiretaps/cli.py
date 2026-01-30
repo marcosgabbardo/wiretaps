@@ -106,14 +106,15 @@ def start(host: str, port: int, target: str, redact: bool, block: bool) -> None:
 @main.command()
 @click.option("--limit", "-n", default=50, help="Number of entries to show")
 @click.option("--pii-only", is_flag=True, help="Show only entries with PII detected")
-def logs(limit: int, pii_only: bool) -> None:
+@click.option("--api-key", help="Filter by API key")
+def logs(limit: int, pii_only: bool, api_key: str | None) -> None:
     """View recent log entries."""
     from rich.table import Table
 
     from wiretaps.storage import Storage
 
     storage = Storage()
-    entries = storage.get_logs(limit=limit, pii_only=pii_only)
+    entries = storage.get_logs(limit=limit, pii_only=pii_only, api_key=api_key)
 
     if not entries:
         console.print("[dim]No log entries found.[/dim]")

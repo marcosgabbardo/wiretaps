@@ -80,6 +80,9 @@ class WiretapsProxy:
         if request.query_string:
             target_url += f"?{request.query_string}"
 
+        # Extract API key from Authorization header
+        api_key = self._extract_api_key(request)
+
         try:
             body = await request.read()
             body_text = body.decode("utf-8") if body else ""
@@ -109,6 +112,7 @@ class WiretapsProxy:
                     duration_ms=duration_ms,
                     pii_types=pii_types,
                     blocked=True,
+                    api_key=api_key,
                 )
 
                 # Send webhook if configured
@@ -171,6 +175,7 @@ class WiretapsProxy:
                         duration_ms=duration_ms,
                         pii_types=pii_types,
                         redacted=redacted_body is not None,
+                        api_key=api_key,
                     )
 
                     # Send webhook if PII was detected (and redacted/passed through)
@@ -199,12 +204,20 @@ class WiretapsProxy:
                 duration_ms=int((time.time() - start_time) * 1000),
                 pii_types=pii_types,
                 error=str(e),
+                api_key=api_key,
             )
             return web.Response(
                 text=json.dumps({"error": str(e)}),
                 status=502,
                 content_type="application/json",
             )
+
+    def _extract_api_key(self, request: web.Request) -> str | None:
+        """Extract API key from Authorization header."""
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            return auth_header[7:]  # Remove "Bearer " prefix
+        return auth_header if auth_header else None
 
     def _estimate_tokens(self, request: str, response: str) -> int:
         """Rough token estimation (4 chars ≈ 1 token)."""
@@ -229,6 +242,7 @@ class WiretapsProxy:
         error: str | None = None,
         redacted: bool = False,
         blocked: bool = False,
+        api_key: str | None = None,
     ) -> None:
         """Log request to storage."""
         entry = LogEntry(
@@ -244,6 +258,7 @@ class WiretapsProxy:
             error=error,
             redacted=redacted,
             blocked=blocked,
+            api_key=api_key,
         )
         self.storage.log(entry)
 

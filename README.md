@@ -333,6 +333,25 @@ When PII is detected, wiretaps sends a POST request:
 
 Works with Slack, Discord, custom webhooks, or any HTTP endpoint.
 
+## Multi-tenant Support
+
+Track usage across multiple API keys (multi-tenant environments):
+
+```bash
+# View logs filtered by API key
+wiretaps logs --api-key sk-xxx
+
+# View stats filtered by API key
+wiretaps stats --api-key sk-xxx
+
+# API also supports filtering
+curl "http://localhost:8081/logs?api_key=sk-xxx"
+```
+
+The dashboard shows masked API keys for each request (e.g., `sk-t...cdef`).
+
+API keys are automatically extracted from the `Authorization: Bearer <key>` header.
+
 ## Supported LLM APIs
 
 - ✅ OpenAI (`api.openai.com`)
