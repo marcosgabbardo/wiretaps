@@ -52,10 +52,6 @@ class StatsPanel(Static):
 class RequestTable(DataTable):
     """Table showing recent requests."""
 
-    BINDINGS = [
-        Binding("enter", "select_row", "View Details"),
-    ]
-
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.storage = Storage()
@@ -248,7 +244,14 @@ class WiretapsDashboard(App):
         table.refresh_data(pii_only=self.pii_only)
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        """Handle row selection."""
+        """Handle row selection (Enter key)."""
+        if event.row_key:
+            entry_id = int(event.row_key.value)
+            detail = self.query_one(DetailPanel)
+            detail.show_entry(entry_id)
+
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        """Handle row highlight (cursor movement)."""
         if event.row_key:
             entry_id = int(event.row_key.value)
             detail = self.query_one(DetailPanel)
