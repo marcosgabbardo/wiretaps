@@ -227,6 +227,33 @@ pii:
     - type: phone
 ```
 
+## Webhook Alerts
+
+Get notified when PII is detected:
+
+```yaml
+# ~/.wiretaps/config.yaml
+alerts:
+  webhook: https://hooks.slack.com/services/xxx/yyy/zzz
+  on:
+    - pii_detected
+    - blocked
+```
+
+When PII is detected, wiretaps sends a POST request:
+
+```json
+{
+  "timestamp": "2024-01-15T10:30:00.000000",
+  "endpoint": "/v1/chat/completions",
+  "pii_types": ["email", "phone"],
+  "redacted": true,
+  "blocked": false
+}
+```
+
+Works with Slack, Discord, custom webhooks, or any HTTP endpoint.
+
 ## Supported LLM APIs
 
 - ✅ OpenAI (`api.openai.com`)
