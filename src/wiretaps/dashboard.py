@@ -63,7 +63,16 @@ class RequestTable(DataTable):
         self.refresh_data()
 
     def refresh_data(self, pii_only: bool = False) -> None:
-        """Refresh table with latest data."""
+        """Refresh table with latest data, preserving cursor position."""
+        # Save current cursor position
+        current_row = self.cursor_row if self.row_count > 0 else 0
+        current_key = None
+        if self.row_count > 0 and self.cursor_row is not None:
+            try:
+                current_key = self.get_row_at(self.cursor_row)
+            except Exception:
+                pass
+        
         self.clear()
         entries = self.storage.get_logs(limit=100, pii_only=pii_only)
         
@@ -96,6 +105,11 @@ class RequestTable(DataTable):
                 pii,
                 key=str(entry.id),
             )
+        
+        # Restore cursor position
+        if self.row_count > 0:
+            restore_row = min(current_row, self.row_count - 1)
+            self.move_cursor(row=restore_row)
 
 
 class DetailPanel(Static):
