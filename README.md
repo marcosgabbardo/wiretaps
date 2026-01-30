@@ -141,6 +141,27 @@ When PII is detected, the request is rejected with HTTP 400:
 
 Your agent receives an error, and the sensitive data never leaves your network. Perfect for strict compliance environments.
 
+## Export Logs
+
+Export your audit logs to JSON or CSV for compliance reports:
+
+```bash
+# Export all logs to JSON
+wiretaps export -f json -o logs.json
+
+# Export to CSV
+wiretaps export -f csv -o logs.csv
+
+# Export only entries with PII detected
+wiretaps export -f json -o pii-incidents.json --pii-only
+
+# Export with date range
+wiretaps export -f csv -o january.csv --since 2024-01-01 --until 2024-01-31
+
+# Limit number of entries
+wiretaps export -f json -o recent.json -n 100
+```
+
 ## Allowlist
 
 Allow specific values to pass through without being flagged as PII:

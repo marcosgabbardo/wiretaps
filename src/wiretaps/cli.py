@@ -134,6 +134,65 @@ def logs(limit: int, pii_only: bool) -> None:
 
 
 @main.command()
+@click.option("--format", "-f", "output_format", type=click.Choice(["json", "csv"]), default="json", help="Output format")
+@click.option("--output", "-o", required=True, help="Output file path")
+@click.option("--since", help="Start date (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)")
+@click.option("--until", help="End date (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)")
+@click.option("--pii-only", is_flag=True, help="Export only entries with PII detected")
+@click.option("--limit", "-n", type=int, help="Maximum entries to export")
+def export(output_format: str, output: str, since: str | None, until: str | None, pii_only: bool, limit: int | None) -> None:
+    """Export logs to JSON or CSV file."""
+    from datetime import datetime
+
+    from wiretaps.storage import Storage
+
+    storage = Storage()
+
+    # Parse date filters
+    start_time = None
+    end_time = None
+
+    if since:
+        try:
+            if " " in since:
+                start_time = datetime.fromisoformat(since)
+            else:
+                start_time = datetime.fromisoformat(f"{since} 00:00:00")
+        except ValueError:
+            console.print(f"[red]Invalid date format: {since}[/red]")
+            return
+
+    if until:
+        try:
+            if " " in until:
+                end_time = datetime.fromisoformat(until)
+            else:
+                end_time = datetime.fromisoformat(f"{until} 23:59:59")
+        except ValueError:
+            console.print(f"[red]Invalid date format: {until}[/red]")
+            return
+
+    if output_format == "json":
+        count = storage.export_json(
+            output,
+            limit=limit,
+            pii_only=pii_only,
+            start_time=start_time,
+            end_time=end_time,
+        )
+    else:
+        count = storage.export_csv(
+            output,
+            limit=limit,
+            pii_only=pii_only,
+            start_time=start_time,
+            end_time=end_time,
+        )
+
+    console.print(f"[green]✓ Exported {count} entries to {output}[/green]")
+
+
+@main.command()
 def dashboard() -> None:
     """Open the live dashboard (TUI)."""
     from wiretaps.dashboard import run_dashboard

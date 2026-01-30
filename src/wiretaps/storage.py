@@ -235,21 +235,37 @@ class Storage:
             conn.execute("DELETE FROM logs")
             conn.commit()
 
-    def export_json(self, path: str, limit: int | None = None) -> int:
+    def export_json(
+        self,
+        path: str,
+        limit: int | None = None,
+        pii_only: bool = False,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+    ) -> int:
         """
         Export logs to JSON file.
 
         Args:
             path: Output file path
             limit: Maximum entries to export (None = all)
+            pii_only: Only export entries with PII detected
+            start_time: Filter by start time
+            end_time: Filter by end time
 
         Returns:
             Number of entries exported
         """
-        entries = self.get_logs(limit=limit or 999999)
+        entries = self.get_logs(
+            limit=limit or 999999,
+            pii_only=pii_only,
+            start_time=start_time,
+            end_time=end_time,
+        )
 
         data = [
             {
+                "id": e.id,
                 "timestamp": e.timestamp.isoformat(),
                 "method": e.method,
                 "endpoint": e.endpoint,
@@ -260,6 +276,9 @@ class Storage:
                 "duration_ms": e.duration_ms,
                 "pii_types": e.pii_types,
                 "error": e.error,
+                "redacted": e.redacted,
+                "blocked": e.blocked,
+                "api_key": e.api_key,
             }
             for e in entries
         ]
@@ -268,3 +287,71 @@ class Storage:
             json.dump(data, f, indent=2)
 
         return len(data)
+
+    def export_csv(
+        self,
+        path: str,
+        limit: int | None = None,
+        pii_only: bool = False,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+    ) -> int:
+        """
+        Export logs to CSV file.
+
+        Args:
+            path: Output file path
+            limit: Maximum entries to export (None = all)
+            pii_only: Only export entries with PII detected
+            start_time: Filter by start time
+            end_time: Filter by end time
+
+        Returns:
+            Number of entries exported
+        """
+        import csv
+
+        entries = self.get_logs(
+            limit=limit or 999999,
+            pii_only=pii_only,
+            start_time=start_time,
+            end_time=end_time,
+        )
+
+        fieldnames = [
+            "id",
+            "timestamp",
+            "method",
+            "endpoint",
+            "status",
+            "tokens",
+            "duration_ms",
+            "pii_types",
+            "redacted",
+            "blocked",
+            "api_key",
+            "error",
+        ]
+
+        with open(path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for e in entries:
+                writer.writerow(
+                    {
+                        "id": e.id,
+                        "timestamp": e.timestamp.isoformat(),
+                        "method": e.method,
+                        "endpoint": e.endpoint,
+                        "status": e.status,
+                        "tokens": e.tokens,
+                        "duration_ms": e.duration_ms,
+                        "pii_types": ",".join(e.pii_types),
+                        "redacted": e.redacted,
+                        "blocked": e.blocked,
+                        "api_key": e.api_key,
+                        "error": e.error,
+                    }
+                )
+
+        return len(entries)
