@@ -1,0 +1,97 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "wiretaps"
+version = "0.1.0"
+description = "See what your AI agents are sending to LLMs. MitM proxy for auditing, PII detection, and compliance."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [
+    { name = "Marcos Gabbardo", email = "mgabbardo@protonmail.com" }
+]
+keywords = [
+    "llm",
+    "proxy",
+    "audit",
+    "pii",
+    "compliance",
+    "openai",
+    "anthropic",
+    "ai-agents",
+    "security",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "aiohttp>=3.9.0",
+    "click>=8.1.0",
+    "rich>=13.0.0",
+    "textual>=0.47.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.2.0",
+    "mypy>=1.8.0",
+]
+spacy = [
+    "spacy>=3.7.0",
+]
+
+[project.scripts]
+wiretaps = "wiretaps.cli:main"
+
+[project.urls]
+Homepage = "https://wiretaps.ai"
+Documentation = "https://wiretaps.ai/docs"
+Repository = "https://github.com/marcosgabbardo/wiretaps"
+Issues = "https://github.com/marcosgabbardo/wiretaps/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/wiretaps"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true

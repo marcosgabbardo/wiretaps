@@ -1,0 +1,202 @@
+"""
+Core proxy server for wiretaps.
+
+Intercepts requests to LLM APIs, logs them, and forwards to the target.
+"""
+
+import json
+import time
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Optional
+
+from aiohttp import web, ClientSession, ClientTimeout
+
+from wiretaps.pii import PIIDetector
+from wiretaps.storage import Storage, LogEntry
+
+
+@dataclass
+class ProxyConfig:
+    """Proxy configuration."""
+    host: str = "127.0.0.1"
+    port: int = 8080
+    target: str = "https://api.openai.com"
+    timeout: int = 120
+    pii_detection: bool = True
+
+
+class WiretapsProxy:
+    """
+    Transparent proxy for LLM API requests.
+    
+    Intercepts HTTP requests, logs them with PII detection,
+    and forwards to the target API.
+    """
+    
+    def __init__(
+        self,
+        host: str = "127.0.0.1",
+        port: int = 8080,
+        target: str = "https://api.openai.com",
+        pii_detection: bool = True,
+    ):
+        self.config = ProxyConfig(
+            host=host,
+            port=port,
+            target=target.rstrip("/"),
+            pii_detection=pii_detection,
+        )
+        self.storage = Storage()
+        self.pii_detector = PIIDetector() if pii_detection else None
+        self.app = web.Application()
+        self._setup_routes()
+    
+    def _setup_routes(self) -> None:
+        """Setup proxy routes."""
+        # Catch all routes
+        self.app.router.add_route("*", "/{path:.*}", self._proxy_handler)
+    
+    async def _proxy_handler(self, request: web.Request) -> web.Response:
+        """Handle incoming requests and proxy to target."""
+        start_time = time.time()
+        
+        # Build target URL
+        path = request.match_info.get("path", "")
+        target_url = f"{self.config.target}/{path}"
+        if request.query_string:
+            target_url += f"?{request.query_string}"
+        
+        # Read request body
+        try:
+            body = await request.read()
+            body_text = body.decode("utf-8") if body else ""
+        except Exception:
+            body_text = ""
+        
+        # Detect PII in request
+        pii_types = []
+        if self.pii_detector and body_text:
+            pii_types = self.pii_detector.get_pii_types(body_text)
+        
+        # Forward headers (filter hop-by-hop)
+        headers = {
+            k: v for k, v in request.headers.items()
+            if k.lower() not in ("host", "content-length", "transfer-encoding")
+        }
+        
+        # Make request to target
+        try:
+            timeout = ClientTimeout(total=self.config.timeout)
+            async with ClientSession(timeout=timeout) as session:
+                async with session.request(
+                    method=request.method,
+                    url=target_url,
+                    headers=headers,
+                    data=body if body else None,
+                ) as resp:
+                    response_body = await resp.read()
+                    response_headers = {
+                        k: v for k, v in resp.headers.items()
+                        if k.lower() not in ("content-encoding", "transfer-encoding", "content-length")
+                    }
+                    
+                    # Calculate tokens (rough estimate from response)
+                    tokens = self._estimate_tokens(body_text, response_body.decode("utf-8", errors="ignore"))
+                    
+                    # Log the request
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    await self._log_request(
+                        method=request.method,
+                        endpoint=f"/{path}",
+                        request_body=body_text,
+                        response_body=response_body.decode("utf-8", errors="ignore"),
+                        status=resp.status,
+                        tokens=tokens,
+                        duration_ms=duration_ms,
+                        pii_types=pii_types,
+                    )
+                    
+                    return web.Response(
+                        body=response_body,
+                        status=resp.status,
+                        headers=response_headers,
+                    )
+                    
+        except Exception as e:
+            # Log error
+            await self._log_request(
+                method=request.method,
+                endpoint=f"/{path}",
+                request_body=body_text,
+                response_body=str(e),
+                status=500,
+                tokens=0,
+                duration_ms=int((time.time() - start_time) * 1000),
+                pii_types=pii_types,
+                error=str(e),
+            )
+            return web.Response(
+                text=json.dumps({"error": str(e)}),
+                status=502,
+                content_type="application/json",
+            )
+    
+    def _estimate_tokens(self, request: str, response: str) -> int:
+        """Rough token estimation (4 chars ≈ 1 token)."""
+        try:
+            # Try to get actual token count from response
+            resp_json = json.loads(response)
+            if "usage" in resp_json:
+                return resp_json["usage"].get("total_tokens", 0)
+        except Exception:
+            pass
+        
+        # Fallback to estimation
+        return (len(request) + len(response)) // 4
+    
+    async def _log_request(
+        self,
+        method: str,
+        endpoint: str,
+        request_body: str,
+        response_body: str,
+        status: int,
+        tokens: int,
+        duration_ms: int,
+        pii_types: list,
+        error: Optional[str] = None,
+    ) -> None:
+        """Log request to storage."""
+        entry = LogEntry(
+            timestamp=datetime.now(),
+            method=method,
+            endpoint=endpoint,
+            request_body=request_body,
+            response_body=response_body,
+            status=status,
+            tokens=tokens,
+            duration_ms=duration_ms,
+            pii_types=pii_types,
+            error=error,
+        )
+        self.storage.log(entry)
+        
+        # Print to console
+        pii_status = f"⚠️  PII: {', '.join(pii_types)}" if pii_types else "✓"
+        print(f"{entry.timestamp.strftime('%H:%M:%S')} | {method} {endpoint} | {tokens} tk | {pii_status}")
+    
+    async def run(self) -> None:
+        """Start the proxy server."""
+        runner = web.AppRunner(self.app)
+        await runner.setup()
+        site = web.TCPSite(runner, self.config.host, self.config.port)
+        await site.start()
+        
+        # Keep running
+        while True:
+            await asyncio.sleep(3600)
+
+
+# Async support
+import asyncio

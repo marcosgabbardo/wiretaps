@@ -1,0 +1,84 @@
+# Default PII detection patterns for wiretaps
+# These are loaded automatically. Add custom patterns to ~/.wiretaps/patterns.yaml
+
+patterns:
+  # Personal Identifiers
+  - name: email
+    description: Email addresses
+    regex: '\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+    severity: medium
+    
+  - name: phone_international
+    description: International phone numbers
+    regex: '\+?[1-9]\d{0,2}[-.\s]?\(?\d{1,4}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,9}'
+    severity: medium
+
+  - name: ssn
+    description: US Social Security Numbers
+    regex: '\b\d{3}-\d{2}-\d{4}\b'
+    severity: critical
+
+  # Brazilian Documents
+  - name: cpf
+    description: Brazilian CPF (individual taxpayer ID)
+    regex: '\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b'
+    severity: high
+
+  - name: cnpj
+    description: Brazilian CNPJ (company taxpayer ID)
+    regex: '\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b'
+    severity: medium
+
+  # Financial
+  - name: credit_card_visa
+    description: Visa credit card numbers
+    regex: '\b4[0-9]{12}(?:[0-9]{3})?\b'
+    severity: critical
+
+  - name: credit_card_mastercard
+    description: Mastercard credit card numbers
+    regex: '\b5[1-5][0-9]{14}\b'
+    severity: critical
+
+  - name: credit_card_amex
+    description: American Express credit card numbers
+    regex: '\b3[47][0-9]{13}\b'
+    severity: critical
+
+  # Crypto
+  - name: btc_address
+    description: Bitcoin addresses (legacy and bech32)
+    regex: '\b(?:bc1|[13])[a-zA-HJ-NP-Z0-9]{25,62}\b'
+    severity: high
+
+  - name: eth_address
+    description: Ethereum addresses
+    regex: '\b0x[a-fA-F0-9]{40}\b'
+    severity: high
+
+  - name: private_key_hex
+    description: Potential private keys (64 hex characters)
+    regex: '\b(?:0x)?[a-fA-F0-9]{64}\b'
+    severity: critical
+
+  # API Keys / Secrets
+  - name: openai_api_key
+    description: OpenAI API keys
+    regex: '\bsk-[a-zA-Z0-9]{48}\b'
+    severity: critical
+
+  - name: anthropic_api_key
+    description: Anthropic API keys
+    regex: '\bsk-ant-[a-zA-Z0-9-]{90,}\b'
+    severity: critical
+
+  - name: generic_api_key
+    description: Generic API keys/tokens
+    regex: '\b(?:api[_-]?key|api[_-]?token|secret[_-]?key)["\s:=]+["\']?[a-zA-Z0-9_-]{20,}["\']?'
+    severity: high
+    flags: IGNORECASE
+
+  - name: bearer_token
+    description: Bearer tokens in headers
+    regex: '\bBearer\s+[a-zA-Z0-9_-]{20,}\b'
+    severity: high
