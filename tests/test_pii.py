@@ -230,6 +230,74 @@ class TestHelpers:
         assert "credit_card" in types
 
 
+class TestCustomPatterns:
+    """Tests for custom PII patterns."""
+
+    def test_custom_pattern_basic(self):
+        """Test basic custom pattern detection."""
+        detector = PIIDetector(custom_patterns=[
+            {"name": "internal_id", "regex": "INT-[0-9]{6}", "severity": "high"}
+        ])
+
+        matches = detector.scan("Document ID: INT-123456")
+        internal_ids = [m for m in matches if m.pattern_name == "internal_id"]
+        assert len(internal_ids) == 1
+        assert internal_ids[0].matched_text == "INT-123456"
+        assert internal_ids[0].severity == "high"
+
+    def test_custom_pattern_not_matched(self):
+        """Test that custom pattern doesn't match invalid input."""
+        detector = PIIDetector(custom_patterns=[
+            {"name": "internal_id", "regex": "INT-[0-9]{6}", "severity": "high"}
+        ])
+
+        # Wrong format
+        matches = detector.scan("Document ID: INT-12345")  # Only 5 digits
+        internal_ids = [m for m in matches if m.pattern_name == "internal_id"]
+        assert len(internal_ids) == 0
+
+    def test_multiple_custom_patterns(self):
+        """Test multiple custom patterns."""
+        detector = PIIDetector(custom_patterns=[
+            {"name": "internal_id", "regex": "INT-[0-9]{6}", "severity": "high"},
+            {"name": "project_code", "regex": "PROJ-[A-Z]{3}-[0-9]{4}", "severity": "medium"},
+        ])
+
+        matches = detector.scan("Project PROJ-ABC-1234 has document INT-999888")
+
+        internal_ids = [m for m in matches if m.pattern_name == "internal_id"]
+        project_codes = [m for m in matches if m.pattern_name == "project_code"]
+
+        assert len(internal_ids) == 1
+        assert len(project_codes) == 1
+
+    def test_custom_pattern_default_severity(self):
+        """Test custom pattern uses default severity if not specified."""
+        detector = PIIDetector(custom_patterns=[
+            {"name": "test_pattern", "regex": "TEST-[0-9]+"}  # No severity
+        ])
+
+        matches = detector.scan("Code: TEST-123")
+        test_patterns = [m for m in matches if m.pattern_name == "test_pattern"]
+        assert len(test_patterns) == 1
+        assert test_patterns[0].severity == "medium"  # Default
+
+    def test_custom_pattern_with_builtin(self):
+        """Test custom patterns work alongside built-in patterns."""
+        detector = PIIDetector(custom_patterns=[
+            {"name": "employee_id", "regex": "EMP[0-9]{5}", "severity": "medium"}
+        ])
+
+        text = "Employee EMP12345 has email john@example.com"
+        matches = detector.scan(text)
+
+        employee_ids = [m for m in matches if m.pattern_name == "employee_id"]
+        emails = [m for m in matches if m.pattern_name == "email"]
+
+        assert len(employee_ids) == 1
+        assert len(emails) == 1
+
+
 class TestAllowlist:
     """Tests for allowlist functionality."""
 

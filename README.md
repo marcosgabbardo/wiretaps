@@ -97,14 +97,35 @@ wiretaps automatically scans for sensitive data:
 | Private Key | `0x...` (64 hex chars) |
 | Seed Phrase | 12/24 BIP-39 words |
 
-Add custom patterns:
+## Custom PII Patterns
+
+Add your own patterns to detect company-specific sensitive data:
+
+```bash
+# Add a custom pattern
+wiretaps patterns add --name "internal_id" --regex "INT-[0-9]{6}" --severity high
+
+# Add another pattern
+wiretaps patterns add -n "employee_id" -r "EMP[A-Z]{2}[0-9]{4}" -s critical
+
+# List all custom patterns
+wiretaps patterns list
+
+# Remove a pattern
+wiretaps patterns remove --name "internal_id"
+```
+
+Custom patterns are saved in `~/.wiretaps/config.yaml`:
 
 ```yaml
-# ~/.wiretaps/patterns.yaml
-patterns:
-  - name: internal_id
-    regex: "INTERNAL-[A-Z]{3}-[0-9]{6}"
-    severity: high
+pii:
+  custom:
+    - name: internal_id
+      regex: "INT-[0-9]{6}"
+      severity: high
+    - name: employee_id
+      regex: "EMP[A-Z]{2}[0-9]{4}"
+      severity: critical
 ```
 
 ## Redact Mode

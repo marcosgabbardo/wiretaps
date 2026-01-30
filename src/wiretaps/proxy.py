@@ -45,6 +45,7 @@ class WiretapsProxy:
         redact_mode: bool = False,
         block_mode: bool = False,
         allowlist: list[dict] | None = None,
+        custom_patterns: list[dict] | None = None,
         webhook_url: str | None = None,
         webhook_events: list[str] | None = None,
     ):
@@ -59,7 +60,10 @@ class WiretapsProxy:
         self.webhook_url = webhook_url
         self.webhook_events = webhook_events or ["pii_detected", "blocked"]
         self.storage = Storage()
-        self.pii_detector = PIIDetector(allowlist=allowlist) if pii_detection else None
+        self.pii_detector = PIIDetector(
+            allowlist=allowlist,
+            custom_patterns=custom_patterns,
+        ) if pii_detection else None
         self.app = web.Application()
         self._setup_routes()
 

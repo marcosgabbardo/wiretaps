@@ -28,6 +28,12 @@ def get_allowlist_from_config(config: dict) -> list[dict]:
     return pii_config.get("allowlist", [])
 
 
+def get_custom_patterns_from_config(config: dict) -> list[dict]:
+    """Extract custom PII patterns from config."""
+    pii_config = config.get("pii", {})
+    return pii_config.get("custom", [])
+
+
 @click.group()
 @click.version_option(version=__version__, prog_name="wiretaps")
 def main() -> None:
@@ -47,9 +53,10 @@ def start(host: str, port: int, target: str, redact: bool, block: bool) -> None:
 
     from wiretaps.proxy import WiretapsProxy
 
-    # Load config for allowlist and webhook
+    # Load config for allowlist, custom patterns, and webhook
     config = load_config()
     allowlist = get_allowlist_from_config(config)
+    custom_patterns = get_custom_patterns_from_config(config)
 
     # Get webhook config
     alerts_config = config.get("alerts", {})
@@ -69,6 +76,8 @@ def start(host: str, port: int, target: str, redact: bool, block: bool) -> None:
         )
     if allowlist:
         console.print(f"   Allowlist: [cyan]{len(allowlist)} rules[/cyan]")
+    if custom_patterns:
+        console.print(f"   Custom Patterns: [cyan]{len(custom_patterns)}[/cyan]")
     if webhook_url:
         console.print(f"   Webhook: [cyan]configured[/cyan] (events: {', '.join(webhook_events)})")
     console.print()
@@ -83,6 +92,7 @@ def start(host: str, port: int, target: str, redact: bool, block: bool) -> None:
         redact_mode=redact,
         block_mode=block,
         allowlist=allowlist,
+        custom_patterns=custom_patterns,
         webhook_url=webhook_url,
         webhook_events=webhook_events,
     )
@@ -271,19 +281,23 @@ pii:
 
 @main.command()
 @click.argument("text")
-@click.option("--no-config", is_flag=True, help="Ignore config file (no allowlist)")
+@click.option("--no-config", is_flag=True, help="Ignore config file (no allowlist/custom patterns)")
 def scan(text: str, no_config: bool) -> None:
     """Scan text for PII (for testing patterns)."""
     from wiretaps.pii import PIIDetector
 
     allowlist = []
+    custom_patterns = []
     if not no_config:
         config = load_config()
         allowlist = get_allowlist_from_config(config)
+        custom_patterns = get_custom_patterns_from_config(config)
         if allowlist:
             console.print(f"[dim]Using {len(allowlist)} allowlist rules from config[/dim]")
+        if custom_patterns:
+            console.print(f"[dim]Using {len(custom_patterns)} custom patterns from config[/dim]")
 
-    detector = PIIDetector(allowlist=allowlist)
+    detector = PIIDetector(allowlist=allowlist, custom_patterns=custom_patterns)
     results = detector.scan(text)
 
     if not results:
@@ -395,6 +409,104 @@ def allowlist(action: str, pii_type: str | None, value: str | None, pattern: str
             with open(config_file, "w") as f:
                 yaml.dump(config, f, default_flow_style=False)
             console.print("[green]✓ Allowlist cleared[/green]")
+
+
+@main.command()
+@click.argument("action", type=click.Choice(["list", "add", "remove"]))
+@click.option("--name", "-n", help="Pattern name (e.g., 'internal_id')")
+@click.option("--regex", "-r", help="Regex pattern to match")
+@click.option("--severity", "-s", type=click.Choice(["low", "medium", "high", "critical"]), default="medium", help="Pattern severity")
+def patterns(action: str, name: str | None, regex: str | None, severity: str) -> None:
+    """Manage custom PII patterns.
+
+    Examples:
+        wiretaps patterns list
+        wiretaps patterns add --name "internal_id" --regex "INT-[0-9]{6}" --severity high
+        wiretaps patterns add -n "employee_id" -r "EMP[A-Z]{2}[0-9]{4}" -s critical
+        wiretaps patterns remove --name "internal_id"
+    """
+    import re
+
+    config_file = Path.home() / ".wiretaps" / "config.yaml"
+
+    if not config_file.exists():
+        console.print("[yellow]No config file found. Run 'wiretaps init' first.[/yellow]")
+        return
+
+    with open(config_file) as f:
+        config = yaml.safe_load(f) or {}
+
+    if "pii" not in config:
+        config["pii"] = {}
+    if "custom" not in config["pii"]:
+        config["pii"]["custom"] = []
+
+    patterns_list = config["pii"]["custom"]
+
+    if action == "list":
+        if not patterns_list:
+            console.print("[dim]No custom patterns configured.[/dim]")
+            console.print("[dim]Add one with: wiretaps patterns add --name 'my_pattern' --regex 'MY-[0-9]+' --severity high[/dim]")
+            return
+        console.print("[bold]Custom PII patterns:[/bold]")
+        for i, pattern in enumerate(patterns_list, 1):
+            sev_color = {
+                "low": "dim",
+                "medium": "yellow",
+                "high": "red",
+                "critical": "bold red",
+            }.get(pattern.get("severity", "medium"), "yellow")
+            console.print(
+                f"  {i}. [cyan]{pattern.get('name')}[/cyan]: "
+                f"[{sev_color}]{pattern.get('severity', 'medium')}[/{sev_color}] "
+                f"[dim]/{pattern.get('regex')}/[/dim]"
+            )
+
+    elif action == "add":
+        if not name or not regex:
+            console.print("[red]Both --name and --regex are required for adding a pattern[/red]")
+            return
+
+        # Validate regex
+        try:
+            re.compile(regex)
+        except re.error as e:
+            console.print(f"[red]Invalid regex pattern: {e}[/red]")
+            return
+
+        # Check for duplicate names
+        if any(p.get("name") == name for p in patterns_list):
+            console.print(f"[yellow]Pattern with name '{name}' already exists. Remove it first.[/yellow]")
+            return
+
+        new_pattern = {
+            "name": name,
+            "regex": regex,
+            "severity": severity,
+        }
+
+        patterns_list.append(new_pattern)
+
+        with open(config_file, "w") as f:
+            yaml.dump(config, f, default_flow_style=False)
+
+        console.print(f"[green]✓ Added custom pattern:[/green] {name} (severity: {severity})")
+
+    elif action == "remove":
+        if not name:
+            console.print("[red]Specify --name to identify the pattern to remove[/red]")
+            return
+
+        original_count = len(patterns_list)
+        patterns_list[:] = [p for p in patterns_list if p.get("name") != name]
+
+        removed = original_count - len(patterns_list)
+        if removed:
+            with open(config_file, "w") as f:
+                yaml.dump(config, f, default_flow_style=False)
+            console.print(f"[green]✓ Removed pattern: {name}[/green]")
+        else:
+            console.print(f"[yellow]No pattern found with name '{name}'[/yellow]")
 
 
 if __name__ == "__main__":
