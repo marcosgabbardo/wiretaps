@@ -122,6 +122,25 @@ Redacted:  "My email is [EMAIL] and SSN is [US_SSN]"
 
 The LLM never sees the real data. Your audit logs still capture the original for compliance.
 
+## Block Mode
+
+Completely block requests that contain PII:
+
+```bash
+wiretaps start --block
+```
+
+When PII is detected, the request is rejected with HTTP 400:
+
+```json
+{
+  "error": "Request blocked: PII detected",
+  "pii_types": ["email", "phone"]
+}
+```
+
+Your agent receives an error, and the sensitive data never leaves your network. Perfect for strict compliance environments.
+
 ## Allowlist
 
 Allow specific values to pass through without being flagged as PII:

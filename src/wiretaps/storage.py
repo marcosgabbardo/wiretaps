@@ -26,6 +26,8 @@ class LogEntry:
     pii_types: list[str] = field(default_factory=list)
     error: str | None = None
     redacted: bool = False
+    blocked: bool = False
+    api_key: str | None = None
     id: int | None = None
 
 
@@ -61,15 +63,21 @@ class Storage:
                     duration_ms INTEGER,
                     pii_types TEXT,
                     error TEXT,
-                    redacted INTEGER DEFAULT 0
+                    redacted INTEGER DEFAULT 0,
+                    blocked INTEGER DEFAULT 0,
+                    api_key TEXT
                 )
             """)
 
-            # Migration: add redacted column if not exists
+            # Migration: add columns if not exists
             cursor = conn.execute("PRAGMA table_info(logs)")
             columns = [row[1] for row in cursor.fetchall()]
             if "redacted" not in columns:
                 conn.execute("ALTER TABLE logs ADD COLUMN redacted INTEGER DEFAULT 0")
+            if "blocked" not in columns:
+                conn.execute("ALTER TABLE logs ADD COLUMN blocked INTEGER DEFAULT 0")
+            if "api_key" not in columns:
+                conn.execute("ALTER TABLE logs ADD COLUMN api_key TEXT")
 
             # Index for common queries
             conn.execute("""
@@ -79,6 +87,10 @@ class Storage:
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_pii
                 ON logs(pii_types)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_api_key
+                ON logs(api_key)
             """)
             conn.commit()
 
@@ -97,8 +109,8 @@ class Storage:
                 """
                 INSERT INTO logs (
                     timestamp, method, endpoint, request_body, response_body,
-                    status, tokens, duration_ms, pii_types, error, redacted
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    status, tokens, duration_ms, pii_types, error, redacted, blocked, api_key
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     entry.timestamp.isoformat(),
@@ -112,6 +124,8 @@ class Storage:
                     json.dumps(entry.pii_types),
                     entry.error,
                     1 if entry.redacted else 0,
+                    1 if entry.blocked else 0,
+                    entry.api_key,
                 ),
             )
             conn.commit()
@@ -124,6 +138,7 @@ class Storage:
         pii_only: bool = False,
         start_time: datetime | None = None,
         end_time: datetime | None = None,
+        api_key: str | None = None,
     ) -> list[LogEntry]:
         """
         Retrieve log entries.
@@ -134,12 +149,13 @@ class Storage:
             pii_only: Only return entries with PII detected
             start_time: Filter by start time
             end_time: Filter by end time
+            api_key: Filter by API key
 
         Returns:
             List of LogEntry objects
         """
         query = "SELECT * FROM logs WHERE 1=1"
-        params = []
+        params: list = []
 
         if pii_only:
             query += " AND pii_types != '[]'"
@@ -152,6 +168,10 @@ class Storage:
             query += " AND timestamp <= ?"
             params.append(end_time.isoformat())
 
+        if api_key:
+            query += " AND api_key = ?"
+            params.append(api_key)
+
         query += " ORDER BY timestamp DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
 
@@ -162,6 +182,7 @@ class Storage:
 
         entries = []
         for row in rows:
+            row_keys = row.keys()
             entries.append(
                 LogEntry(
                     id=row["id"],
@@ -175,7 +196,9 @@ class Storage:
                     duration_ms=row["duration_ms"],
                     pii_types=json.loads(row["pii_types"] or "[]"),
                     error=row["error"],
-                    redacted=bool(row["redacted"]) if "redacted" in row.keys() else False,
+                    redacted=bool(row["redacted"]) if "redacted" in row_keys else False,
+                    blocked=bool(row["blocked"]) if "blocked" in row_keys else False,
+                    api_key=row["api_key"] if "api_key" in row_keys else None,
                 )
             )
 

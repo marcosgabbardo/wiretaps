@@ -40,31 +40,52 @@ def main() -> None:
 @click.option("--port", default=8080, help="Port to bind to")
 @click.option("--target", default="https://api.openai.com", help="Target API URL")
 @click.option("--redact", is_flag=True, help="Redact PII before sending to LLM")
-def start(host: str, port: int, target: str, redact: bool) -> None:
+@click.option("--block", is_flag=True, help="Block requests containing PII (returns 400)")
+def start(host: str, port: int, target: str, redact: bool, block: bool) -> None:
     """Start the wiretaps proxy server."""
     import asyncio
 
     from wiretaps.proxy import WiretapsProxy
 
-    # Load config for allowlist
+    # Load config for allowlist and webhook
     config = load_config()
     allowlist = get_allowlist_from_config(config)
+
+    # Get webhook config
+    alerts_config = config.get("alerts", {})
+    webhook_url = alerts_config.get("webhook")
+    webhook_events = alerts_config.get("on", ["pii_detected", "blocked"])
 
     console.print(f"[bold green]🔌 wiretaps v{__version__}[/bold green]")
     console.print(f"   Proxy:  [cyan]http://{host}:{port}[/cyan]")
     console.print(f"   Target: [cyan]{target}[/cyan]")
-    if redact:
+    if block:
+        console.print(
+            "   Mode:   [bold red]🚫 BLOCK MODE[/bold red] - Requests with PII will be rejected"
+        )
+    elif redact:
         console.print(
             "   Mode:   [bold yellow]🛡️  REDACT MODE[/bold yellow] - PII will be masked before sending"
         )
     if allowlist:
         console.print(f"   Allowlist: [cyan]{len(allowlist)} rules[/cyan]")
+    if webhook_url:
+        console.print(f"   Webhook: [cyan]configured[/cyan] (events: {', '.join(webhook_events)})")
     console.print()
     console.print("[dim]Set OPENAI_BASE_URL=http://{host}:{port}/v1 in your agent[/dim]")
     console.print("[dim]Press Ctrl+C to stop[/dim]")
     console.print()
 
-    proxy = WiretapsProxy(host=host, port=port, target=target, redact_mode=redact, allowlist=allowlist)
+    proxy = WiretapsProxy(
+        host=host,
+        port=port,
+        target=target,
+        redact_mode=redact,
+        block_mode=block,
+        allowlist=allowlist,
+        webhook_url=webhook_url,
+        webhook_events=webhook_events,
+    )
 
     try:
         asyncio.run(proxy.run())

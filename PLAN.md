@@ -5,7 +5,7 @@
 **Website:** https://wiretaps.ai
 **Repo:** https://github.com/marcosgabbardo/wiretaps
 **Modelo:** Open-core (OSS gratuito + Enterprise pago)
-**Status:** v0.6.0 - Allowlist support ✅
+**Status:** v0.7.0 - Block Mode + Export + Custom Patterns + Webhook + Stats + API + Multi-tenant ✅
 
 ---
 
@@ -55,6 +55,42 @@
 ### Marketing
 - [x] Landing page wiretaps.ai (Cloudflare Pages)
 - [x] Mobile layout ajustado
+
+### Block Mode (v0.7.0)
+- [x] `--block` flag para rejeitar requests com PII
+- [x] Retorna HTTP 400 com `{"error": "Request blocked: PII detected", "pii_types": [...]}`
+- [x] Testes unitários
+- [x] Documentação no README
+
+### Export JSON/CSV (v0.7.0)
+- [x] `wiretaps export --format json -o logs.json`
+- [x] `wiretaps export --format csv -o logs.csv`
+- [x] Filtros: `--since`, `--until`, `--pii-only`
+
+### Custom PII Patterns (v0.7.0)
+- [x] `wiretaps patterns add --name "internal_id" --regex "INT-[0-9]{6}" --severity high`
+- [x] `wiretaps patterns list`
+- [x] `wiretaps patterns remove --name "internal_id"`
+- [x] Salvar em ~/.wiretaps/config.yaml
+
+### Webhook Alerts (v0.7.0)
+- [x] Config em ~/.wiretaps/config.yaml
+- [x] POST JSON quando detectar PII
+- [x] Eventos: pii_detected, blocked
+
+### Stats (v0.7.0)
+- [x] `wiretaps stats` - resumo
+- [x] `wiretaps stats --json` - output JSON
+- [x] Métricas: requests, tokens, PII detections, by day/hour
+
+### REST API (v0.7.0)
+- [x] `wiretaps api start --port 8081`
+- [x] GET /logs, /logs/:id, /stats, /health
+
+### Multi-tenant (v0.7.0)
+- [x] Detectar API key do header Authorization
+- [x] Separar logs por API key
+- [x] Dashboard mostra key (mascarada)
 
 ---
 
