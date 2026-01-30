@@ -314,6 +314,15 @@ class PIIPatterns:
     GITHUB_TOKEN = re.compile(r"\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}\b")
 
 
+@dataclass
+class AllowlistRule:
+    """A rule for allowing specific PII to pass through."""
+
+    type: str | None = None  # PII type (email, phone, etc.) or None for all
+    value: str | None = None  # Exact value to allow
+    pattern: str | None = None  # Regex pattern to allow
+
+
 class PIIDetector:
     """
     Detects PII and sensitive data in text.
@@ -321,9 +330,34 @@ class PIIDetector:
     Usage:
         detector = PIIDetector()
         matches = detector.scan("Contact me at user@example.com")
+
+        # With allowlist
+        detector = PIIDetector(allowlist=[
+            AllowlistRule(type="email", pattern=r".*@mycompany\\.com"),
+            AllowlistRule(type="phone", value="+5511999999999"),
+        ])
     """
 
-    def __init__(self, custom_patterns: list[dict] | None = None):
+    def __init__(
+        self,
+        custom_patterns: list[dict] | None = None,
+        allowlist: list[AllowlistRule | dict] | None = None,
+    ):
+        # Convert dict allowlist entries to AllowlistRule
+        self.allowlist: list[AllowlistRule] = []
+        if allowlist:
+            for rule in allowlist:
+                if isinstance(rule, dict):
+                    self.allowlist.append(AllowlistRule(**rule))
+                else:
+                    self.allowlist.append(rule)
+
+        # Compile allowlist patterns
+        self._compiled_allowlist: list[tuple[str | None, re.Pattern | None, str | None]] = []
+        for rule in self.allowlist:
+            compiled_pattern = re.compile(rule.pattern) if rule.pattern else None
+            self._compiled_allowlist.append((rule.type, compiled_pattern, rule.value))
+
         self.patterns = [
             # Universal
             ("email", PIIPatterns.EMAIL, "medium"),
@@ -392,6 +426,29 @@ class PIIDetector:
                     (p["name"], re.compile(p["regex"]), p.get("severity", "medium"))
                 )
 
+    def _is_allowed(self, pii_type: str, value: str) -> bool:
+        """Check if a PII match is in the allowlist."""
+        for rule_type, rule_pattern, rule_value in self._compiled_allowlist:
+            # Check type filter (None means all types)
+            # Match if type starts with rule_type (e.g., "phone" matches "phone_us", "phone_uk")
+            if rule_type is not None:
+                if pii_type != rule_type and not pii_type.startswith(f"{rule_type}_"):
+                    continue
+
+            # Check exact value match
+            if rule_value is not None and rule_value == value:
+                return True
+
+            # Check pattern match
+            if rule_pattern is not None and rule_pattern.fullmatch(value):
+                return True
+
+            # If only type specified (no value or pattern), allow all of that type
+            if rule_type is not None and rule_value is None and rule_pattern is None:
+                return True
+
+        return False
+
     def scan(self, text: str) -> list[PIIMatch]:
         """
         Scan text for PII patterns.
@@ -407,12 +464,18 @@ class PIIDetector:
         # Run regex patterns
         for name, pattern, severity in self.patterns:
             for match in pattern.finditer(text):
+                matched_text = match.group()
+
+                # Skip if in allowlist
+                if self._is_allowed(name, matched_text):
+                    continue
+
                 # Avoid duplicate matches at same position
                 if not any(m.start == match.start() and m.end == match.end() for m in matches):
                     matches.append(
                         PIIMatch(
                             pattern_name=name,
-                            matched_text=match.group(),
+                            matched_text=matched_text,
                             start=match.start(),
                             end=match.end(),
                             severity=severity,
@@ -421,6 +484,8 @@ class PIIDetector:
 
         # Check for seed phrases (12 or 24 BIP-39 words)
         seed_matches = self._detect_seed_phrase(text)
+        # Filter seed phrases through allowlist too
+        seed_matches = [m for m in seed_matches if not self._is_allowed(m.pattern_name, m.matched_text)]
         matches.extend(seed_matches)
 
         return matches

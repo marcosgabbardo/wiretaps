@@ -228,3 +228,112 @@ class TestHelpers:
         types = detector.get_pii_types(text)
         assert "email" in types
         assert "credit_card" in types
+
+
+class TestAllowlist:
+    """Tests for allowlist functionality."""
+
+    def test_allowlist_exact_value(self):
+        """Test allowing specific value."""
+        detector = PIIDetector(allowlist=[
+            {"type": "email", "value": "allowed@example.com"}
+        ])
+
+        # This email should be allowed (not detected)
+        matches = detector.scan("Contact allowed@example.com for info")
+        emails = [m for m in matches if m.pattern_name == "email"]
+        assert len(emails) == 0
+
+        # Other emails should still be detected
+        matches = detector.scan("Contact other@example.com for info")
+        emails = [m for m in matches if m.pattern_name == "email"]
+        assert len(emails) == 1
+
+    def test_allowlist_pattern(self):
+        """Test allowing pattern (regex)."""
+        detector = PIIDetector(allowlist=[
+            {"type": "email", "pattern": r".*@company\.com"}
+        ])
+
+        # Emails matching pattern should be allowed
+        matches = detector.scan("Contact john@company.com")
+        emails = [m for m in matches if m.pattern_name == "email"]
+        assert len(emails) == 0
+
+        matches = detector.scan("Contact jane@company.com")
+        emails = [m for m in matches if m.pattern_name == "email"]
+        assert len(emails) == 0
+
+        # Other domains should still be detected
+        matches = detector.scan("Contact user@other.com")
+        emails = [m for m in matches if m.pattern_name == "email"]
+        assert len(emails) == 1
+
+    def test_allowlist_type_only(self):
+        """Test allowing all of a type."""
+        detector = PIIDetector(allowlist=[
+            {"type": "email"}  # Allow ALL emails
+        ])
+
+        # All emails should be allowed
+        matches = detector.scan("Contact any@email.com and other@test.org")
+        emails = [m for m in matches if m.pattern_name == "email"]
+        assert len(emails) == 0
+
+        # Other PII types should still be detected
+        matches = detector.scan("SSN: 123-45-6789")
+        ssns = [m for m in matches if m.pattern_name == "us_ssn"]
+        assert len(ssns) == 1
+
+    def test_allowlist_phone_value(self):
+        """Test allowing specific phone number."""
+        # Allow the full international format
+        detector = PIIDetector(allowlist=[
+            {"type": "phone", "value": "+5511999999999"},
+            {"type": "phone", "pattern": r"5511999999\d*"},  # Also allow partial matches
+        ])
+
+        # This phone should be allowed (both full and partial matches)
+        matches = detector.scan("Call +5511999999999")
+        phones = [m for m in matches if "phone" in m.pattern_name]
+        assert len(phones) == 0
+
+        # Other phones should still be detected
+        matches = detector.scan("Call +5511888888888")
+        phones = [m for m in matches if "phone" in m.pattern_name]
+        assert len(phones) >= 1
+
+    def test_allowlist_multiple_rules(self):
+        """Test multiple allowlist rules."""
+        detector = PIIDetector(allowlist=[
+            {"type": "email", "value": "safe@company.com"},
+            {"type": "email", "pattern": r".*@internal\.corp"},
+            {"type": "phone", "value": "+1234567890"},
+        ])
+
+        # Allowed email by value
+        matches = detector.scan("Contact safe@company.com")
+        assert len([m for m in matches if m.pattern_name == "email"]) == 0
+
+        # Allowed email by pattern
+        matches = detector.scan("Contact anyone@internal.corp")
+        assert len([m for m in matches if m.pattern_name == "email"]) == 0
+
+        # Not allowed email
+        matches = detector.scan("Contact random@other.com")
+        assert len([m for m in matches if m.pattern_name == "email"]) == 1
+
+    def test_redact_respects_allowlist(self):
+        """Test that redact() respects allowlist."""
+        detector = PIIDetector(allowlist=[
+            {"type": "email", "value": "allowed@example.com"}
+        ])
+
+        text = "Contact allowed@example.com or blocked@example.com"
+        redacted = detector.redact(text)
+
+        # Allowed email should NOT be redacted
+        assert "allowed@example.com" in redacted
+        # Blocked email should be redacted
+        assert "blocked@example.com" not in redacted
+        assert "[EMAIL]" in redacted

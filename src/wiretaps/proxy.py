@@ -42,6 +42,7 @@ class WiretapsProxy:
         target: str = "https://api.openai.com",
         pii_detection: bool = True,
         redact_mode: bool = False,
+        allowlist: list[dict] | None = None,
     ):
         self.config = ProxyConfig(
             host=host,
@@ -51,7 +52,7 @@ class WiretapsProxy:
             redact_mode=redact_mode,
         )
         self.storage = Storage()
-        self.pii_detector = PIIDetector() if pii_detection else None
+        self.pii_detector = PIIDetector(allowlist=allowlist) if pii_detection else None
         self.app = web.Application()
         self._setup_routes()
 
