@@ -58,7 +58,7 @@
 - [ ] Documentação (docs site com mkdocs?)
 
 ### Integração
-- [ ] Integração Clawdbot (plugin ou skill)
+- [x] ~~Integração Clawdbot~~ — não viável (Clawdbot não suporta baseUrl customizado)
 
 ### Launch
 - [ ] Blog post técnico
