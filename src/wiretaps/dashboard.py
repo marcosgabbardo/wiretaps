@@ -21,8 +21,8 @@ from wiretaps.storage import LogEntry, Storage
 class StatsPanel(Static):
     """Display aggregate statistics."""
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
         self.storage = Storage()
 
     def compose(self) -> ComposeResult:
@@ -56,8 +56,8 @@ class RequestTable(DataTable):
         Binding("enter", "select_row", "View Details"),
     ]
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
         self.storage = Storage()
         self.cursor_type = "row"
         self.zebra_stripes = True
@@ -105,8 +105,8 @@ class RequestTable(DataTable):
 class DetailPanel(Static):
     """Panel showing request/response details."""
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
         self.storage = Storage()
 
     def show_entry(self, entry_id: int) -> None:
