@@ -71,11 +71,13 @@ def logs(limit: int, pii_only: bool) -> None:
     table.add_column("PII")
 
     for entry in entries:
-        pii_status = (
-            "[red]⚠️ " + ", ".join(entry.pii_types) + "[/red]"
-            if entry.pii_types
-            else "[green]✓ clean[/green]"
-        )
+        if entry.pii_types:
+            if entry.redacted:
+                pii_status = "[cyan]🛡️ " + ", ".join(entry.pii_types) + "[/cyan]"
+            else:
+                pii_status = "[red]⚠️ " + ", ".join(entry.pii_types) + "[/red]"
+        else:
+            pii_status = "[green]✓ clean[/green]"
         table.add_row(
             entry.timestamp.strftime("%H:%M:%S"),
             entry.endpoint,

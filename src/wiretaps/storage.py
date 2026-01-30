@@ -25,6 +25,7 @@ class LogEntry:
     duration_ms: int
     pii_types: list[str] = field(default_factory=list)
     error: str | None = None
+    redacted: bool = False
     id: int | None = None
 
 
@@ -59,9 +60,16 @@ class Storage:
                     tokens INTEGER,
                     duration_ms INTEGER,
                     pii_types TEXT,
-                    error TEXT
+                    error TEXT,
+                    redacted INTEGER DEFAULT 0
                 )
             """)
+
+            # Migration: add redacted column if not exists
+            cursor = conn.execute("PRAGMA table_info(logs)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if "redacted" not in columns:
+                conn.execute("ALTER TABLE logs ADD COLUMN redacted INTEGER DEFAULT 0")
 
             # Index for common queries
             conn.execute("""
@@ -89,8 +97,8 @@ class Storage:
                 """
                 INSERT INTO logs (
                     timestamp, method, endpoint, request_body, response_body,
-                    status, tokens, duration_ms, pii_types, error
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    status, tokens, duration_ms, pii_types, error, redacted
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     entry.timestamp.isoformat(),
@@ -103,6 +111,7 @@ class Storage:
                     entry.duration_ms,
                     json.dumps(entry.pii_types),
                     entry.error,
+                    1 if entry.redacted else 0,
                 ),
             )
             conn.commit()
@@ -166,6 +175,7 @@ class Storage:
                     duration_ms=row["duration_ms"],
                     pii_types=json.loads(row["pii_types"] or "[]"),
                     error=row["error"],
+                    redacted=bool(row["redacted"]) if "redacted" in row.keys() else False,
                 )
             )
 

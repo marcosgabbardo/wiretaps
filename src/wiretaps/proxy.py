@@ -189,6 +189,7 @@ class WiretapsProxy:
             duration_ms=duration_ms,
             pii_types=pii_types,
             error=error,
+            redacted=redacted,
         )
         self.storage.log(entry)
 

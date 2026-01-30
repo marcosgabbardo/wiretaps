@@ -86,7 +86,10 @@ class RequestTable(DataTable):
 
             # PII indicator
             if entry.pii_types:
-                pii = Text(f"⚠️ {len(entry.pii_types)}", style="red bold")
+                if entry.redacted:
+                    pii = Text(f"🛡️ {len(entry.pii_types)}", style="cyan bold")
+                else:
+                    pii = Text(f"⚠️ {len(entry.pii_types)}", style="red bold")
             else:
                 pii = Text("✓", style="green dim")
 
@@ -147,8 +150,12 @@ class DetailPanel(Static):
 
         # PII Alert
         if entry.pii_types:
-            text.append("\n⚠️  PII DETECTED: ", style="red bold")
-            text.append(", ".join(entry.pii_types) + "\n", style="red")
+            if entry.redacted:
+                text.append("\n🛡️  PII REDACTED: ", style="cyan bold")
+                text.append(", ".join(entry.pii_types) + "\n", style="cyan")
+            else:
+                text.append("\n⚠️  PII DETECTED: ", style="red bold")
+                text.append(", ".join(entry.pii_types) + "\n", style="red")
 
         # Request body (truncated)
         text.append(f"\n{'─' * 30} REQUEST {'─' * 30}\n", style="dim")
