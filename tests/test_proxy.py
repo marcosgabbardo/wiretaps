@@ -1,10 +1,6 @@
 """Tests for proxy server functionality."""
 
-import json
 
-import pytest
-from aiohttp import web
-from aiohttp.test_utils import AioHTTPTestCase
 
 from wiretaps.proxy import WiretapsProxy
 
