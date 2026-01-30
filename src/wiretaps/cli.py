@@ -306,6 +306,41 @@ def dashboard() -> None:
     run_dashboard()
 
 
+@main.group()
+def api() -> None:
+    """Manage the REST API server."""
+    pass
+
+
+@api.command("start")
+@click.option("--host", default="127.0.0.1", help="Host to bind to")
+@click.option("--port", default=8081, help="Port to bind to")
+def api_start(host: str, port: int) -> None:
+    """Start the REST API server."""
+    import asyncio
+
+    from wiretaps.api import WiretapsAPI
+
+    console.print(f"[bold green]🔌 wiretaps API v{__version__}[/bold green]")
+    console.print(f"   Server: [cyan]http://{host}:{port}[/cyan]")
+    console.print()
+    console.print("[dim]Endpoints:[/dim]")
+    console.print("[dim]  GET /health       - Health check[/dim]")
+    console.print("[dim]  GET /logs         - List logs (with pagination)[/dim]")
+    console.print("[dim]  GET /logs/:id     - Get log details[/dim]")
+    console.print("[dim]  GET /stats        - Usage statistics[/dim]")
+    console.print()
+    console.print("[dim]Press Ctrl+C to stop[/dim]")
+    console.print()
+
+    api_server = WiretapsAPI(host=host, port=port)
+
+    try:
+        asyncio.run(api_server.run())
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Shutting down API server...[/yellow]")
+
+
 @main.command()
 def init() -> None:
     """Initialize wiretaps configuration."""

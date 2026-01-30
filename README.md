@@ -266,6 +266,46 @@ Top PII Types:
   - us_ssn: 3
 ```
 
+## REST API
+
+Serve logs and stats via a REST API for dashboards and integrations:
+
+```bash
+# Start the API server
+wiretaps api start --port 8081
+```
+
+**Endpoints:**
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /health` | Health check |
+| `GET /logs` | List logs with pagination |
+| `GET /logs/:id` | Get log details |
+| `GET /stats` | Usage statistics |
+
+**Examples:**
+
+```bash
+# Health check
+curl http://localhost:8081/health
+
+# List logs (with pagination)
+curl "http://localhost:8081/logs?limit=10&offset=0"
+
+# Filter logs with PII only
+curl "http://localhost:8081/logs?pii_only=true"
+
+# Get specific log
+curl http://localhost:8081/logs/123
+
+# Get stats
+curl http://localhost:8081/stats
+
+# Get stats by day
+curl "http://localhost:8081/stats?by_day=true"
+```
+
 ## Webhook Alerts
 
 Get notified when PII is detected:
