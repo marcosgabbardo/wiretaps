@@ -84,8 +84,8 @@ def logs(limit: int, pii_only: bool) -> None:
 @main.command()
 def dashboard() -> None:
     """Open the live dashboard (TUI)."""
-    console.print("[yellow]Dashboard coming soon![/yellow]")
-    console.print("For now, use: wiretaps logs --follow")
+    from wiretaps.dashboard import run_dashboard
+    run_dashboard()
 
 
 @main.command()
