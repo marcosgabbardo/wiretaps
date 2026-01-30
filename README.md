@@ -27,6 +27,12 @@ AI agents have access to your emails, files, and credentials. But do you know wh
                    📊 Dashboard
 ```
 
+### Live Dashboard
+
+<p align="center">
+  <img src="assets/dashboard.png" alt="wiretaps dashboard" width="800">
+</p>
+
 ## Features
 
 - **🔍 Full Visibility** — Log every prompt, response, and tool call
