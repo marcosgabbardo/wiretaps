@@ -32,7 +32,9 @@ def start(host: str, port: int, target: str, redact: bool) -> None:
     console.print(f"   Proxy:  [cyan]http://{host}:{port}[/cyan]")
     console.print(f"   Target: [cyan]{target}[/cyan]")
     if redact:
-        console.print(f"   Mode:   [bold yellow]🛡️  REDACT MODE[/bold yellow] - PII will be masked before sending")
+        console.print(
+            "   Mode:   [bold yellow]🛡️  REDACT MODE[/bold yellow] - PII will be masked before sending"
+        )
     console.print()
     console.print("[dim]Set OPENAI_BASE_URL=http://{host}:{port}/v1 in your agent[/dim]")
     console.print("[dim]Press Ctrl+C to stop[/dim]")
@@ -88,6 +90,7 @@ def logs(limit: int, pii_only: bool) -> None:
 def dashboard() -> None:
     """Open the live dashboard (TUI)."""
     from wiretaps.dashboard import run_dashboard
+
     run_dashboard()
 
 

@@ -81,7 +81,7 @@ class WiretapsProxy:
         redacted_body = None
         if self.pii_detector and body_text:
             pii_types = self.pii_detector.get_pii_types(body_text)
-            
+
             # Redact PII if enabled and PII was found
             if self.config.redact_mode and pii_types:
                 redacted_body = self.pii_detector.redact(body_text)
@@ -116,7 +116,7 @@ class WiretapsProxy:
                     )
 
                     duration_ms = int((time.time() - start_time) * 1000)
-                    
+
                     # Log original body (not redacted) for audit purposes
                     await self._log_request(
                         method=request.method,

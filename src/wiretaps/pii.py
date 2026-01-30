@@ -158,9 +158,7 @@ class PIIPatterns:
     US_ZIP = re.compile(r"\b\d{5}(?:-\d{4})?\b")
 
     # UK Postcode (e.g., SW1A 1AA, M1 1AE)
-    UK_POSTCODE = re.compile(
-        r"\b[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}\b", re.IGNORECASE
-    )
+    UK_POSTCODE = re.compile(r"\b[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}\b", re.IGNORECASE)
 
     # Brazilian CEP (XXXXX-XXX)
     BR_CEP = re.compile(r"\b\d{5}-?\d{3}\b")
@@ -181,13 +179,13 @@ class PIIPatterns:
     # US/UK style: number + street name (123 Main Street)
     STREET_ADDRESS_US = re.compile(
         r"\b\d{1,5}\s+[\w\s]{1,30}\s+(?:street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln|way|court|ct|place|pl|circle|cir|terrace|ter|highway|hwy)\b",
-        re.IGNORECASE
+        re.IGNORECASE,
     )
 
     # Brazilian/Latin style: street name + number (Rua das Flores, 456)
     STREET_ADDRESS_BR = re.compile(
         r"(?:rua|avenida|av|alameda|travessa|estrada|calle|carrera)\s+[\w\s]+[,\s]+\d+",
-        re.IGNORECASE
+        re.IGNORECASE,
     )
 
     # PO Box
@@ -467,7 +465,9 @@ class PIIDetector:
         matches = self.scan(text)
         return list({m.pattern_name for m in matches})
 
-    def redact(self, text: str, replacement: str | None = None, use_type_labels: bool = True) -> str:
+    def redact(
+        self, text: str, replacement: str | None = None, use_type_labels: bool = True
+    ) -> str:
         """
         Redact PII from text.
 
@@ -480,7 +480,7 @@ class PIIDetector:
             Text with PII replaced
         """
         matches = self.scan(text)
-        
+
         # Remove overlapping matches (keep longer match)
         matches = self._remove_overlaps(matches)
 
@@ -498,15 +498,15 @@ class PIIDetector:
             result = result[: match.start] + label + result[match.end :]
 
         return result
-    
+
     def _remove_overlaps(self, matches: list[PIIMatch]) -> list[PIIMatch]:
         """Remove overlapping matches, keeping the longer one."""
         if not matches:
             return matches
-        
+
         # Sort by start position, then by length (descending)
         matches.sort(key=lambda m: (m.start, -(m.end - m.start)))
-        
+
         result = []
         for match in matches:
             # Check if this match overlaps with any already accepted match
@@ -517,7 +517,7 @@ class PIIDetector:
                     break
             if not overlaps:
                 result.append(match)
-        
+
         return result
 
     def redact_with_map(self, text: str) -> tuple[str, dict[str, str]]:
