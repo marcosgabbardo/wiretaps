@@ -155,10 +155,48 @@ def load_config() -> dict:
 
 ---
 
+### 4. **CLI - Comando allowlist/patterns crasheia se lista estiver vazia no YAML** (Baixo)
+
+**Arquivo:** `src/wiretaps/cli.py`  
+**Linhas:** 500, 578  
+**Severidade:** Baixa
+
+**Problema:**
+
+Se o arquivo de config tiver `allowlist:` ou `custom:` sem itens (comentados ou vazios), YAML parseia como `None` ao invés de lista vazia. Comandos `wiretaps allowlist add` e `wiretaps patterns add` crasheiam com:
+
+```
+AttributeError: 'NoneType' object has no attribute 'append'
+```
+
+**Correção (allowlist):**
+```python
+# Antes
+if "allowlist" not in config["pii"]:
+    config["pii"]["allowlist"] = []
+rules = config["pii"]["allowlist"]  # ❌ Pode ser None
+
+# Depois
+if "allowlist" not in config["pii"] or config["pii"]["allowlist"] is None:
+    config["pii"]["allowlist"] = []
+rules = config["pii"]["allowlist"]  # ✅ Sempre lista
+```
+
+**Correção (patterns):**
+```python
+# Mesma lógica aplicada a custom patterns
+if "custom" not in config["pii"] or config["pii"]["custom"] is None:
+    config["pii"]["custom"] = []
+```
+
+**Impacto:** Comandos `allowlist` e `patterns` funcionam corretamente mesmo com config vazio.
+
+---
+
 ## 📊 Resumo
 
-- **Bugs encontrados:** 3
-- **Bugs corrigidos:** 3
+- **Bugs encontrados:** 4
+- **Bugs corrigidos:** 4
 - **Testes afetados:** 0 (todos continuam passando)
 - **Breaking changes:** Nenhum
 

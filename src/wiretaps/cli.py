@@ -473,7 +473,7 @@ def allowlist(action: str, pii_type: str | None, value: str | None, pattern: str
 
     if "pii" not in config:
         config["pii"] = {}
-    if "allowlist" not in config["pii"]:
+    if "allowlist" not in config["pii"] or config["pii"]["allowlist"] is None:
         config["pii"]["allowlist"] = []
 
     rules = config["pii"]["allowlist"]
@@ -575,7 +575,7 @@ def patterns(action: str, name: str | None, regex: str | None, severity: str) ->
 
     if "pii" not in config:
         config["pii"] = {}
-    if "custom" not in config["pii"]:
+    if "custom" not in config["pii"] or config["pii"]["custom"] is None:
         config["pii"]["custom"] = []
 
     patterns_list = config["pii"]["custom"]
