@@ -45,14 +45,21 @@ class WiretapsAPI:
 
     async def _logs_handler(self, request: web.Request) -> web.Response:
         """List logs with pagination."""
-        # Parse query parameters
-        limit = int(request.query.get("limit", "50"))
-        offset = int(request.query.get("offset", "0"))
-        pii_only = request.query.get("pii_only", "false").lower() == "true"
-        api_key = request.query.get("api_key")
+        # Parse and validate query parameters
+        try:
+            limit = int(request.query.get("limit", "50"))
+            offset = int(request.query.get("offset", "0"))
+            pii_only = request.query.get("pii_only", "false").lower() == "true"
+            api_key = request.query.get("api_key")
 
-        # Limit max results
-        limit = min(limit, 1000)
+            # Validate and clamp values
+            limit = max(1, min(limit, 1000))
+            offset = max(0, offset)
+        except ValueError:
+            return web.json_response(
+                {"error": "Invalid query parameters (limit/offset must be integers)"},
+                status=400,
+            )
 
         entries = self.storage.get_logs(
             limit=limit,
@@ -88,11 +95,16 @@ class WiretapsAPI:
 
     async def _log_detail_handler(self, request: web.Request) -> web.Response:
         """Get single log entry with full details."""
-        log_id = int(request.match_info["id"])
+        try:
+            log_id = int(request.match_info["id"])
+        except ValueError:
+            return web.json_response(
+                {"error": "Invalid log ID"},
+                status=400,
+            )
 
-        # Get all logs and find the one we want (simple approach)
-        entries = self.storage.get_logs(limit=10000)
-        entry = next((e for e in entries if e.id == log_id), None)
+        # Efficient lookup by ID
+        entry = self.storage.get_log_by_id(log_id)
 
         if not entry:
             return web.json_response(
@@ -150,8 +162,14 @@ class WiretapsAPI:
         site = web.TCPSite(runner, self.host, self.port)
         await site.start()
 
-        while True:
-            await asyncio.sleep(3600)
+        try:
+            # Keep server running until interrupted
+            while True:
+                await asyncio.sleep(3600)
+        finally:
+            # Graceful shutdown
+            await site.stop()
+            await runner.cleanup()
 
 
 def run_api(host: str = "127.0.0.1", port: int = 8081) -> None:

@@ -133,8 +133,8 @@ class DetailPanel(Static):
 
     def show_entry(self, entry_id: int) -> None:
         """Display details for a specific entry."""
-        entries = self.storage.get_logs(limit=1000)
-        entry = next((e for e in entries if e.id == entry_id), None)
+        # Efficient lookup by ID
+        entry = self.storage.get_log_by_id(entry_id)
 
         if not entry:
             self.update("Entry not found")
@@ -261,9 +261,13 @@ class WiretapsDashboard(App):
     @work(exclusive=True)
     async def auto_refresh(self) -> None:
         """Periodically refresh data."""
-        while True:
-            await asyncio.sleep(2)
-            self.refresh_all()
+        try:
+            while True:
+                await asyncio.sleep(2)
+                self.refresh_all()
+        except asyncio.CancelledError:
+            # Cleanup when app closes
+            pass
 
     def refresh_all(self) -> None:
         """Refresh all panels."""

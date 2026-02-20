@@ -38,18 +38,19 @@ class Storage:
     Default uses SQLite for zero-config setup.
     """
 
-    def __init__(self, db_path: str | None = None):
+    def __init__(self, db_path: str | None = None, timeout: float = 10.0):
         if db_path is None:
             db_dir = Path.home() / ".wiretaps"
             db_dir.mkdir(parents=True, exist_ok=True)
             db_path = str(db_dir / "logs.db")
 
         self.db_path = db_path
+        self.timeout = timeout
         self._init_db()
 
     def _init_db(self) -> None:
         """Initialize database schema."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=self.timeout) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS logs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -104,7 +105,7 @@ class Storage:
         Returns:
             ID of the inserted entry
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=self.timeout) as conn:
             cursor = conn.execute(
                 """
                 INSERT INTO logs (
@@ -130,6 +131,42 @@ class Storage:
             )
             conn.commit()
             return cursor.lastrowid
+
+    def get_log_by_id(self, log_id: int) -> LogEntry | None:
+        """
+        Get single log entry by ID (efficient).
+
+        Args:
+            log_id: Log entry ID
+
+        Returns:
+            LogEntry or None if not found
+        """
+        with sqlite3.connect(self.db_path, timeout=self.timeout) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute("SELECT * FROM logs WHERE id = ?", (log_id,))
+            row = cursor.fetchone()
+
+            if not row:
+                return None
+
+            row_keys = row.keys()
+            return LogEntry(
+                id=row["id"],
+                timestamp=datetime.fromisoformat(row["timestamp"]),
+                method=row["method"],
+                endpoint=row["endpoint"],
+                request_body=row["request_body"] or "",
+                response_body=row["response_body"] or "",
+                status=row["status"],
+                tokens=row["tokens"],
+                duration_ms=row["duration_ms"],
+                pii_types=json.loads(row["pii_types"] or "[]"),
+                error=row["error"],
+                redacted=bool(row["redacted"]) if "redacted" in row_keys else False,
+                blocked=bool(row["blocked"]) if "blocked" in row_keys else False,
+                api_key=row["api_key"] if "api_key" in row_keys else None,
+            )
 
     def get_logs(
         self,
@@ -175,7 +212,7 @@ class Storage:
         query += " ORDER BY timestamp DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
 
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=self.timeout) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(query, params)
             rows = cursor.fetchall()
@@ -206,7 +243,7 @@ class Storage:
 
     def get_stats(self, api_key: str | None = None) -> dict:
         """Get aggregate statistics."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=self.timeout) as conn:
             where_clause = "WHERE 1=1"
             params: list = []
 
@@ -252,7 +289,7 @@ class Storage:
 
     def get_stats_by_day(self, days: int = 7, api_key: str | None = None) -> list[dict]:
         """Get statistics grouped by day."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=self.timeout) as conn:
             where_clause = "WHERE 1=1"
             params: list = []
 
@@ -291,7 +328,7 @@ class Storage:
 
     def get_stats_by_hour(self, hours: int = 24, api_key: str | None = None) -> list[dict]:
         """Get statistics grouped by hour."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=self.timeout) as conn:
             where_clause = "WHERE 1=1"
             params: list = []
 
@@ -329,23 +366,30 @@ class Storage:
             ]
 
     def get_top_pii_types(self, limit: int = 10, api_key: str | None = None) -> list[dict]:
-        """Get top detected PII types."""
-        entries = self.get_logs(limit=10000, pii_only=True, api_key=api_key)
+        """Get top detected PII types (optimized - no memory loading)."""
+        with sqlite3.connect(self.db_path, timeout=self.timeout) as conn:
+            where_clause = "WHERE pii_types != '[]'"
+            params: list = []
 
-        pii_counts: dict[str, int] = {}
-        for entry in entries:
-            for pii_type in entry.pii_types:
-                pii_counts[pii_type] = pii_counts.get(pii_type, 0) + 1
+            if api_key:
+                where_clause += " AND api_key = ?"
+                params.append(api_key)
 
-        sorted_types = sorted(pii_counts.items(), key=lambda x: x[1], reverse=True)[:limit]
+            query = f"SELECT pii_types FROM logs {where_clause}"
+            cursor = conn.execute(query, params)
 
-        return [{"type": t, "count": c} for t, c in sorted_types]
+            pii_counts: dict[str, int] = {}
+            for row in cursor:
+                pii_types = json.loads(row[0] or "[]")
+                for pii_type in pii_types:
+                    pii_counts[pii_type] = pii_counts.get(pii_type, 0) + 1
 
-    def clear(self) -> None:
-        """Clear all logs (use with caution!)."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("DELETE FROM logs")
-            conn.commit()
+            sorted_types = sorted(pii_counts.items(), key=lambda x: x[1], reverse=True)[:limit]
+
+            return [{"type": t, "count": c} for t, c in sorted_types]
+
+    # REMOVED: clear() method was too dangerous without proper safeguards
+    # Users can manually delete the DB file if needed: rm ~/.wiretaps/logs.db
 
     def export_json(
         self,
@@ -367,38 +411,44 @@ class Storage:
 
         Returns:
             Number of entries exported
+
+        Raises:
+            RuntimeError: If export fails
         """
-        entries = self.get_logs(
-            limit=limit or 999999,
-            pii_only=pii_only,
-            start_time=start_time,
-            end_time=end_time,
-        )
+        try:
+            entries = self.get_logs(
+                limit=limit or 999999,
+                pii_only=pii_only,
+                start_time=start_time,
+                end_time=end_time,
+            )
 
-        data = [
-            {
-                "id": e.id,
-                "timestamp": e.timestamp.isoformat(),
-                "method": e.method,
-                "endpoint": e.endpoint,
-                "request_body": e.request_body,
-                "response_body": e.response_body,
-                "status": e.status,
-                "tokens": e.tokens,
-                "duration_ms": e.duration_ms,
-                "pii_types": e.pii_types,
-                "error": e.error,
-                "redacted": e.redacted,
-                "blocked": e.blocked,
-                "api_key": e.api_key,
-            }
-            for e in entries
-        ]
+            data = [
+                {
+                    "id": e.id,
+                    "timestamp": e.timestamp.isoformat(),
+                    "method": e.method,
+                    "endpoint": e.endpoint,
+                    "request_body": e.request_body,
+                    "response_body": e.response_body,
+                    "status": e.status,
+                    "tokens": e.tokens,
+                    "duration_ms": e.duration_ms,
+                    "pii_types": e.pii_types,
+                    "error": e.error,
+                    "redacted": e.redacted,
+                    "blocked": e.blocked,
+                    "api_key": e.api_key,
+                }
+                for e in entries
+            ]
 
-        with open(path, "w") as f:
-            json.dump(data, f, indent=2)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
 
-        return len(data)
+            return len(data)
+        except (OSError, IOError) as e:
+            raise RuntimeError(f"Failed to export to {path}: {e}") from e
 
     def export_csv(
         self,
@@ -420,50 +470,56 @@ class Storage:
 
         Returns:
             Number of entries exported
+
+        Raises:
+            RuntimeError: If export fails
         """
         import csv
 
-        entries = self.get_logs(
-            limit=limit or 999999,
-            pii_only=pii_only,
-            start_time=start_time,
-            end_time=end_time,
-        )
+        try:
+            entries = self.get_logs(
+                limit=limit or 999999,
+                pii_only=pii_only,
+                start_time=start_time,
+                end_time=end_time,
+            )
 
-        fieldnames = [
-            "id",
-            "timestamp",
-            "method",
-            "endpoint",
-            "status",
-            "tokens",
-            "duration_ms",
-            "pii_types",
-            "redacted",
-            "blocked",
-            "api_key",
-            "error",
-        ]
+            fieldnames = [
+                "id",
+                "timestamp",
+                "method",
+                "endpoint",
+                "status",
+                "tokens",
+                "duration_ms",
+                "pii_types",
+                "redacted",
+                "blocked",
+                "api_key",
+                "error",
+            ]
 
-        with open(path, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            for e in entries:
-                writer.writerow(
-                    {
-                        "id": e.id,
-                        "timestamp": e.timestamp.isoformat(),
-                        "method": e.method,
-                        "endpoint": e.endpoint,
-                        "status": e.status,
-                        "tokens": e.tokens,
-                        "duration_ms": e.duration_ms,
-                        "pii_types": ",".join(e.pii_types),
-                        "redacted": e.redacted,
-                        "blocked": e.blocked,
-                        "api_key": e.api_key,
-                        "error": e.error,
-                    }
-                )
+            with open(path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                for e in entries:
+                    writer.writerow(
+                        {
+                            "id": e.id,
+                            "timestamp": e.timestamp.isoformat(),
+                            "method": e.method,
+                            "endpoint": e.endpoint,
+                            "status": e.status,
+                            "tokens": e.tokens,
+                            "duration_ms": e.duration_ms,
+                            "pii_types": ",".join(e.pii_types),
+                            "redacted": e.redacted,
+                            "blocked": e.blocked,
+                            "api_key": e.api_key,
+                            "error": e.error,
+                        }
+                    )
 
-        return len(entries)
+            return len(entries)
+        except (OSError, IOError) as e:
+            raise RuntimeError(f"Failed to export to {path}: {e}") from e
