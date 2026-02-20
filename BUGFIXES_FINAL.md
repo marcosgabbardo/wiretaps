@@ -260,3 +260,58 @@ ef26ea7 - fix: corrigir 10 bugs críticos de performance e segurança (round 3)
 **Status:** ✅ Pushed  
 **Testes:** 88/88 ✅  
 **Bugs corrigidos:** 26 ✅
+
+---
+
+## 🔥 Bug Adicional Crítico (Descoberto em Teste E2E)
+
+### **#27: PII - scan() Não Remove Overlaps** ⚠️ CRÍTICO
+- **Severidade:** Crítica
+- **Arquivo:** `pii.py:569`
+- **Descoberto:** Durante teste E2E final
+- **Impacto:** 
+  ```
+  ANTES:
+    - openai_key: sk-proj-...1234567890... @ 0-50
+    - phone_us: 1234567890 @ 34-44  ❌ OVERLAP!
+  
+  DEPOIS:
+    - openai_key: sk-proj-...1234567890... @ 0-50  ✅ CORRIGIDO
+  ```
+- **Problema:** `scan()` só verificava duplicatas exatas, não removia overlaps parciais
+- **Correção:** Adicionar `matches = self._remove_overlaps(matches)` antes do return
+- **Commit:** `8edca62`
+
+---
+
+## 📊 Resumo Final Atualizado
+
+| Categoria | Bugs | % |
+|-----------|------|---|
+| **Críticos** | 9 | 33% |
+| **Performance (Alto)** | 6 | 22% |
+| **Segurança/Robustez (Médio)** | 10 | 37% |
+| **Baixo** | 2 | 8% |
+
+**Total:** 27 bugs corrigidos ✅
+
+---
+
+## ✅ Validação Final
+
+```bash
+# Testes automatizados
+$ uv run pytest -v
+88 passed, 5 warnings ✅
+
+# Teste E2E
+$ uv run python /tmp/test_e2e.py
+✅ Session pool funcionando
+✅ Async logging funcionando
+✅ Pattern order correto
+✅ API key SEM phone (overlap removido)
+✅ Redaction perfeita
+✅ UTF-8 preservado
+```
+
+**Status:** Production-ready 🚀
