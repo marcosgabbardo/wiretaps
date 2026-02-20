@@ -36,6 +36,9 @@ class WiretapsProxy:
     and forwards to the target API.
     """
 
+    # Max request body size (10 MB)
+    MAX_BODY_SIZE = 10 * 1024 * 1024
+
     def __init__(
         self,
         host: str = "127.0.0.1",
@@ -65,11 +68,19 @@ class WiretapsProxy:
             custom_patterns=custom_patterns,
         ) if pii_detection else None
         self.app = web.Application()
+        self._session: ClientSession | None = None  # Shared session pool
         self._setup_routes()
 
     def _setup_routes(self) -> None:
         """Setup proxy routes."""
         self.app.router.add_route("*", "/{path:.*}", self._proxy_handler)
+
+    async def _get_session(self) -> ClientSession:
+        """Get or create shared HTTP session (connection pool)."""
+        if self._session is None or self._session.closed:
+            timeout = ClientTimeout(total=self.config.timeout)
+            self._session = ClientSession(timeout=timeout)
+        return self._session
 
     async def _proxy_handler(self, request: web.Request) -> web.Response:
         """Handle incoming requests and proxy to target."""
@@ -83,11 +94,39 @@ class WiretapsProxy:
         # Extract API key from Authorization header
         api_key = self._extract_api_key(request)
 
+        # Read request body with size limit (DoS protection)
         try:
-            body = await request.read()
-            body_text = body.decode("utf-8") if body else ""
-        except Exception:
-            body_text = ""
+            body = await request.content.read(self.MAX_BODY_SIZE)
+            
+            # Check if there's more data (body too large)
+            if not request.content.at_eof():
+                return web.Response(
+                    text=json.dumps({"error": "Request body too large (max 10MB)"}),
+                    status=413,
+                    content_type="application/json",
+                )
+            
+            # Robust encoding with fallback
+            if body:
+                try:
+                    body_text = body.decode("utf-8")
+                except UnicodeDecodeError:
+                    # Fallback to latin-1 (never fails) with replacement
+                    body_text = body.decode("latin-1", errors="replace")
+            else:
+                body_text = ""
+        except asyncio.TimeoutError:
+            return web.Response(
+                text=json.dumps({"error": "Request timeout"}),
+                status=408,
+                content_type="application/json",
+            )
+        except Exception as e:
+            return web.Response(
+                text=json.dumps({"error": f"Failed to read request: {str(e)}"}),
+                status=400,
+                content_type="application/json",
+            )
 
         # Original body for logging
         original_body_text = body_text
@@ -142,56 +181,59 @@ class WiretapsProxy:
         }
 
         try:
-            timeout = ClientTimeout(total=self.config.timeout)
-            async with ClientSession(timeout=timeout) as session:
-                async with session.request(
+            # Use shared session (connection pool)
+            session = await self._get_session()
+            async with session.request(
+                method=request.method,
+                url=target_url,
+                headers=headers,
+                data=body if body else None,
+            ) as resp:
+                response_body = await resp.read()
+                response_headers = {
+                    k: v
+                    for k, v in resp.headers.items()
+                    if k.lower()
+                    not in ("content-encoding", "transfer-encoding", "content-length")
+                }
+
+                # Robust response decoding
+                try:
+                    response_text = response_body.decode("utf-8")
+                except UnicodeDecodeError:
+                    response_text = response_body.decode("latin-1", errors="replace")
+
+                tokens = self._estimate_tokens(body_text, response_text)
+                duration_ms = int((time.time() - start_time) * 1000)
+
+                # Log original body (not redacted) for audit purposes
+                await self._log_request(
                     method=request.method,
-                    url=target_url,
-                    headers=headers,
-                    data=body if body else None,
-                ) as resp:
-                    response_body = await resp.read()
-                    response_headers = {
-                        k: v
-                        for k, v in resp.headers.items()
-                        if k.lower()
-                        not in ("content-encoding", "transfer-encoding", "content-length")
-                    }
+                    endpoint=f"/{path}",
+                    request_body=original_body_text,
+                    response_body=response_text,
+                    status=resp.status,
+                    tokens=tokens,
+                    duration_ms=duration_ms,
+                    pii_types=pii_types,
+                    redacted=redacted_body is not None,
+                    api_key=api_key,
+                )
 
-                    tokens = self._estimate_tokens(
-                        body_text, response_body.decode("utf-8", errors="ignore")
-                    )
-
-                    duration_ms = int((time.time() - start_time) * 1000)
-
-                    # Log original body (not redacted) for audit purposes
-                    await self._log_request(
-                        method=request.method,
+                # Send webhook if PII was detected (fire-and-forget)
+                if pii_types:
+                    asyncio.create_task(self._send_webhook(
                         endpoint=f"/{path}",
-                        request_body=original_body_text,
-                        response_body=response_body.decode("utf-8", errors="ignore"),
-                        status=resp.status,
-                        tokens=tokens,
-                        duration_ms=duration_ms,
                         pii_types=pii_types,
                         redacted=redacted_body is not None,
-                        api_key=api_key,
-                    )
+                        blocked=False,
+                    ))
 
-                    # Send webhook if PII was detected (and redacted/passed through)
-                    if pii_types:
-                        await self._send_webhook(
-                            endpoint=f"/{path}",
-                            pii_types=pii_types,
-                            redacted=redacted_body is not None,
-                            blocked=False,
-                        )
-
-                    return web.Response(
-                        body=response_body,
-                        status=resp.status,
-                        headers=response_headers,
-                    )
+                return web.Response(
+                    body=response_body,
+                    status=resp.status,
+                    headers=response_headers,
+                )
 
         except Exception as e:
             await self._log_request(
@@ -219,6 +261,14 @@ class WiretapsProxy:
             return auth_header[7:]  # Remove "Bearer " prefix
         return auth_header if auth_header else None
 
+    def _mask_api_key(self, api_key: str | None) -> str | None:
+        """Mask API key for display/logging."""
+        if not api_key:
+            return None
+        if len(api_key) <= 8:
+            return "***"
+        return api_key[:4] + "..." + api_key[-4:]
+
     def _estimate_tokens(self, request: str, response: str) -> int:
         """Rough token estimation (4 chars ≈ 1 token)."""
         try:
@@ -244,7 +294,7 @@ class WiretapsProxy:
         blocked: bool = False,
         api_key: str | None = None,
     ) -> None:
-        """Log request to storage."""
+        """Log request to storage (async, non-blocking)."""
         entry = LogEntry(
             timestamp=datetime.now(),
             method=method,
@@ -260,7 +310,8 @@ class WiretapsProxy:
             blocked=blocked,
             api_key=api_key,
         )
-        self.storage.log(entry)
+        # Use async log to avoid blocking event loop
+        await self.storage.log_async(entry)
 
         if pii_types:
             if blocked:
@@ -282,7 +333,7 @@ class WiretapsProxy:
         redacted: bool,
         blocked: bool,
     ) -> None:
-        """Send webhook notification if configured."""
+        """Send webhook notification if configured (fire-and-forget)."""
         if not self.webhook_url:
             return
 
@@ -300,15 +351,20 @@ class WiretapsProxy:
         }
 
         try:
-            timeout = ClientTimeout(total=10)
-            async with ClientSession(timeout=timeout) as session:
-                async with session.post(
-                    self.webhook_url,
-                    json=payload,
-                    headers={"Content-Type": "application/json"},
-                ) as resp:
-                    if resp.status >= 400:
-                        print(f"⚠️  Webhook failed: {resp.status}")
+            # Short timeout (2s) to avoid blocking proxy
+            timeout = ClientTimeout(total=2)
+            session = await self._get_session()
+            
+            async with session.post(
+                self.webhook_url,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=timeout,
+            ) as resp:
+                if resp.status >= 400:
+                    print(f"⚠️  Webhook failed: {resp.status}")
+        except asyncio.TimeoutError:
+            print("⚠️  Webhook timeout (2s)")
         except Exception as e:
             print(f"⚠️  Webhook error: {e}")
 
@@ -325,5 +381,7 @@ class WiretapsProxy:
                 await asyncio.sleep(3600)
         finally:
             # Graceful shutdown
+            if self._session and not self._session.closed:
+                await self._session.close()
             await site.stop()
             await runner.cleanup()

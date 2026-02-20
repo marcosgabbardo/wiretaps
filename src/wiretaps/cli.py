@@ -188,10 +188,19 @@ def export(output_format: str, output: str, since: str | None, until: str | None
             console.print(f"[red]Invalid date format: {until}[/red]")
             return
 
+    # Safe limit: default 100k, max 1M (prevent OOM)
+    safe_limit = None
+    if limit is not None:
+        safe_limit = min(limit, 1_000_000)
+    elif limit is None:
+        # No limit specified - use safe default of 100k
+        safe_limit = 100_000
+        console.print(f"[dim]No limit specified, using safe default: {safe_limit:,} entries[/dim]")
+
     if output_format == "json":
         count = storage.export_json(
             output,
-            limit=limit,
+            limit=safe_limit,
             pii_only=pii_only,
             start_time=start_time,
             end_time=end_time,
@@ -199,7 +208,7 @@ def export(output_format: str, output: str, since: str | None, until: str | None
     else:
         count = storage.export_csv(
             output,
-            limit=limit,
+            limit=safe_limit,
             pii_only=pii_only,
             start_time=start_time,
             end_time=end_time,

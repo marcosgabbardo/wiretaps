@@ -97,7 +97,7 @@ class Storage:
 
     def log(self, entry: LogEntry) -> int:
         """
-        Store a log entry.
+        Store a log entry (blocking I/O).
 
         Args:
             entry: LogEntry to store
@@ -131,6 +131,21 @@ class Storage:
             )
             conn.commit()
             return cursor.lastrowid
+
+    async def log_async(self, entry: LogEntry) -> int:
+        """
+        Store log entry asynchronously (non-blocking for event loop).
+
+        Args:
+            entry: LogEntry to store
+
+        Returns:
+            ID of the inserted entry
+        """
+        import asyncio
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self.log, entry)
 
     def get_log_by_id(self, log_id: int) -> LogEntry | None:
         """
@@ -444,7 +459,8 @@ class Storage:
             ]
 
             with open(path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
+                # ensure_ascii=False for proper UTF-8 encoding
+                json.dump(data, f, indent=2, ensure_ascii=False)
 
             return len(data)
         except (OSError, IOError) as e:
