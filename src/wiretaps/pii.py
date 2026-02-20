@@ -510,6 +510,9 @@ class PIIDetector:
         seed_matches = [m for m in seed_matches if not self._is_allowed(m.pattern_name, m.matched_text)]
         matches.extend(seed_matches)
 
+        # Remove overlapping matches (keep longer/more specific one)
+        matches = self._remove_overlaps(matches)
+
         return matches
 
     def _detect_seed_phrase(self, text: str) -> list[PIIMatch]:
