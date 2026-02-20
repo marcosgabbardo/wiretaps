@@ -193,10 +193,86 @@ if "custom" not in config["pii"] or config["pii"]["custom"] is None:
 
 ---
 
+### 5. **PII Detector - Ordem de Patterns e API Key False Positives** (Crítico)
+
+**Arquivos:** `src/wiretaps/pii.py`  
+**Linhas:** 286-314 (patterns), 369-425 (pattern list)  
+**Severidade:** Crítica
+
+**Problema:**
+
+Patterns genéricos (phones, IBAN) estavam sendo testados ANTES de patterns específicos (API keys, UK NIN), causando false positives:
+
+1. **OpenAI keys quebradas por phone detection:**
+   ```
+   Input:  sk-proj-abcdefghijklmnopqrstuvwxyz1234567890ABCDEF
+   Output: sk-proj-abcdefghijklmnopqrstuvwxyz[PHONE_US]ABCDEF  ❌
+   ```
+   `PHONE_US` matchou `1234567890` dentro da API key.
+
+2. **OpenAI pattern matchando Anthropic keys:**
+   ```python
+   OPENAI_KEY = r"\bsk-(?:proj-|org-)?[a-zA-Z0-9_-]{20,}\b"
+   # Problema: (?:proj-|org-)? é opcional, match sk-ant-... também
+   ```
+
+3. **UK NIN matchando como IBAN:**
+   ```
+   Input: AB123456C  (valid UK NIN)
+   Match: iban  ❌ (should be uk_nin)
+   ```
+
+**Correção:**
+
+**1. Reordenar patterns por especificidade (mais específico primeiro):**
+```python
+self.patterns = [
+    # API Keys (HIGHEST PRIORITY - most specific)
+    ("anthropic_key", ...),  # sk-ant-... ANTES de sk-...
+    ("openai_key", ...),
+    ("github_token", ...),
+    # Crypto (HIGH PRIORITY)
+    ("btc_address", ...),
+    # National IDs (BEFORE generic financial)
+    ("uk_nin", ...),  # ANTES de IBAN
+    ("us_ssn", ...),
+    # Financial
+    ("iban", ...),  # DEPOIS de UK_NIN
+    # Generic numeric (LOWEST PRIORITY)
+    ("phone_us", ...),  # POR ÚLTIMO
+    ("us_zip", ...),
+]
+```
+
+**2. Patterns API key mais específicos:**
+```python
+# Anthropic - mais específico (sk-ant-)
+ANTHROPIC_KEY = re.compile(r"\bsk-ant-[a-zA-Z0-9_-]{20,}\b")
+
+# OpenAI - negative lookahead pra excluir sk-ant-
+OPENAI_KEY = re.compile(r"\bsk-(?!ant-)(?:proj-|org-)?[a-zA-Z0-9_-]{20,}\b")
+#                              ^^^^^^^^ exclui sk-ant-
+```
+
+**3. `_remove_overlaps` elimina matches sobrepostos:**
+- API_KEY match pos 8-57
+- PHONE_US match pos 11-21 (SOBREPÕE)
+- `_remove_overlaps` mantém o maior (API_KEY) ✅
+
+**Impacto:** 
+- API keys não são mais quebradas por phone detection
+- UK NIN detectado corretamente (não mais como IBAN)
+- Anthropic keys distinguidas de OpenAI keys
+- Redaction funciona perfeitamente com `[OPENAI_KEY]`, `[ANTHROPIC_KEY]`, etc.
+
+**Testes:** 88/88 passando ✅
+
+---
+
 ## 📊 Resumo
 
-- **Bugs encontrados:** 4
-- **Bugs corrigidos:** 4
+- **Bugs encontrados:** 5
+- **Bugs corrigidos:** 5
 - **Testes afetados:** 0 (todos continuam passando)
 - **Breaking changes:** Nenhum
 

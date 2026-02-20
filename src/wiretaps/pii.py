@@ -299,19 +299,26 @@ class PIIPatterns:
     PRIVATE_KEY_HEX = re.compile(r"\b(?:0x)?[a-fA-F0-9]{64}\b")
 
     # ==================== API KEYS ====================
-    API_KEY_GENERIC = re.compile(
-        r"\b(?:sk|pk|api|key|secret|token|auth|bearer)[-_]?[a-zA-Z0-9]{20,}\b", re.IGNORECASE
-    )
+    # Anthropic keys (sk-ant-...) - CHECK FIRST (more specific)
+    ANTHROPIC_KEY = re.compile(r"\bsk-ant-[a-zA-Z0-9_-]{20,}\b")
 
-    OPENAI_KEY = re.compile(r"\bsk-[a-zA-Z0-9]{48}\b")
+    # OpenAI keys (sk-proj-..., sk-org-..., sk-...) - AFTER Anthropic
+    # Negative lookahead to exclude sk-ant-
+    OPENAI_KEY = re.compile(r"\bsk-(?!ant-)(?:proj-|org-)?[a-zA-Z0-9_-]{20,}\b")
 
-    ANTHROPIC_KEY = re.compile(r"\bsk-ant-[a-zA-Z0-9_-]{50,}\b")
+    # GitHub tokens (ghp_, gho_, ghu_, ghs_, ghr_)
+    GITHUB_TOKEN = re.compile(r"\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}\b")
 
+    # AWS Access Key ID
     AWS_ACCESS_KEY = re.compile(r"\bAKIA[0-9A-Z]{16}\b")
 
+    # AWS Secret Access Key (40 base64 chars)
     AWS_SECRET_KEY = re.compile(r"\b[A-Za-z0-9/+=]{40}\b")
 
-    GITHUB_TOKEN = re.compile(r"\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}\b")
+    # Generic API keys (sk-, pk-, api-, etc with 20+ chars)
+    API_KEY_GENERIC = re.compile(
+        r"\b(?:sk|pk|api|key|secret|token|auth|bearer)[-_][a-zA-Z0-9_-]{20,}\b", re.IGNORECASE
+    )
 
 
 @dataclass
@@ -358,25 +365,23 @@ class PIIDetector:
             compiled_pattern = re.compile(rule.pattern) if rule.pattern else None
             self._compiled_allowlist.append((rule.type, compiled_pattern, rule.value))
 
+        # Pattern order matters! Specific patterns (API keys, crypto) must come BEFORE
+        # generic patterns (phones, zips) to avoid false positives.
         self.patterns = [
-            # Universal
-            ("email", PIIPatterns.EMAIL, "medium"),
-            ("phone", PIIPatterns.PHONE_INTL, "medium"),
-            ("phone_us", PIIPatterns.PHONE_US, "medium"),
-            ("phone_uk", PIIPatterns.PHONE_UK, "medium"),
-            # IP Addresses
-            ("ipv4", PIIPatterns.IPV4, "medium"),
-            ("ipv6", PIIPatterns.IPV6, "medium"),
-            # Postal Codes
-            ("us_zip", PIIPatterns.US_ZIP, "low"),
-            ("uk_postcode", PIIPatterns.UK_POSTCODE, "low"),
-            ("br_cep", PIIPatterns.BR_CEP, "low"),
-            ("ca_postal", PIIPatterns.CA_POSTAL, "low"),
-            # Addresses
-            ("street_address", PIIPatterns.STREET_ADDRESS_US, "medium"),
-            ("street_address", PIIPatterns.STREET_ADDRESS_BR, "medium"),
-            ("po_box", PIIPatterns.PO_BOX, "low"),
-            # Americas
+            # API Keys (HIGHEST PRIORITY - most specific)
+            # Anthropic BEFORE OpenAI (more specific: sk-ant- vs sk-)
+            ("anthropic_key", PIIPatterns.ANTHROPIC_KEY, "critical"),
+            ("openai_key", PIIPatterns.OPENAI_KEY, "critical"),
+            ("github_token", PIIPatterns.GITHUB_TOKEN, "critical"),
+            ("aws_access_key", PIIPatterns.AWS_ACCESS_KEY, "critical"),
+            ("api_key", PIIPatterns.API_KEY_GENERIC, "critical"),
+            # Crypto (HIGH PRIORITY - specific formats)
+            ("btc_address", PIIPatterns.BTC_ADDRESS, "high"),
+            ("eth_address", PIIPatterns.ETH_ADDRESS, "high"),
+            ("private_key", PIIPatterns.PRIVATE_KEY_HEX, "critical"),
+            # National IDs (specific formats with delimiters) - BEFORE generic financial
+            # UK NIN must come before IBAN (AB123456C matches both)
+            ("uk_nin", PIIPatterns.UK_NIN, "critical"),
             ("us_ssn", PIIPatterns.US_SSN, "critical"),
             ("us_itin", PIIPatterns.US_ITIN, "critical"),
             ("ca_sin", PIIPatterns.CA_SIN, "critical"),
@@ -384,8 +389,11 @@ class PIIDetector:
             ("br_cnpj", PIIPatterns.BR_CNPJ, "medium"),
             ("mx_curp", PIIPatterns.MX_CURP, "high"),
             ("mx_rfc", PIIPatterns.MX_RFC, "medium"),
-            # Europe
-            ("uk_nin", PIIPatterns.UK_NIN, "critical"),
+            # Financial (specific formats)
+            ("credit_card", PIIPatterns.CREDIT_CARD, "critical"),
+            ("credit_card", PIIPatterns.CREDIT_CARD_FORMATTED, "critical"),
+            ("iban", PIIPatterns.IBAN, "high"),
+            ("swift_bic", PIIPatterns.SWIFT_BIC, "medium"),
             ("de_id", PIIPatterns.DE_ID, "high"),
             ("fr_nir", PIIPatterns.FR_NIR, "critical"),
             ("es_dni", PIIPatterns.ES_DNI, "high"),
@@ -395,28 +403,31 @@ class PIIDetector:
             ("be_nn", PIIPatterns.BE_NN, "high"),
             ("ch_ahv", PIIPatterns.CH_AHV, "high"),
             ("eu_vat", PIIPatterns.EU_VAT, "medium"),
-            # Asia-Pacific
             ("au_tfn", PIIPatterns.AU_TFN, "critical"),
             ("in_aadhaar", PIIPatterns.IN_AADHAAR, "critical"),
             ("in_pan", PIIPatterns.IN_PAN, "high"),
             ("kr_rrn", PIIPatterns.KR_RRN, "critical"),
             # Passports
             ("passport", PIIPatterns.PASSPORT_GENERIC, "critical"),
-            # Financial
-            ("credit_card", PIIPatterns.CREDIT_CARD, "critical"),
-            ("credit_card", PIIPatterns.CREDIT_CARD_FORMATTED, "critical"),
-            ("iban", PIIPatterns.IBAN, "high"),
-            ("swift_bic", PIIPatterns.SWIFT_BIC, "medium"),
-            # Crypto
-            ("btc_address", PIIPatterns.BTC_ADDRESS, "high"),
-            ("eth_address", PIIPatterns.ETH_ADDRESS, "high"),
-            ("private_key", PIIPatterns.PRIVATE_KEY_HEX, "critical"),
-            # API Keys
-            ("api_key", PIIPatterns.API_KEY_GENERIC, "critical"),
-            ("openai_key", PIIPatterns.OPENAI_KEY, "critical"),
-            ("anthropic_key", PIIPatterns.ANTHROPIC_KEY, "critical"),
-            ("aws_access_key", PIIPatterns.AWS_ACCESS_KEY, "critical"),
-            ("github_token", PIIPatterns.GITHUB_TOKEN, "critical"),
+            # Contact info (email is specific, safe to check early)
+            ("email", PIIPatterns.EMAIL, "medium"),
+            # Addresses (structured)
+            ("street_address", PIIPatterns.STREET_ADDRESS_US, "medium"),
+            ("street_address", PIIPatterns.STREET_ADDRESS_BR, "medium"),
+            ("po_box", PIIPatterns.PO_BOX, "low"),
+            # IP Addresses
+            ("ipv4", PIIPatterns.IPV4, "medium"),
+            ("ipv6", PIIPatterns.IPV6, "medium"),
+            # Postal codes (structured)
+            ("uk_postcode", PIIPatterns.UK_POSTCODE, "low"),
+            ("ca_postal", PIIPatterns.CA_POSTAL, "low"),
+            ("br_cep", PIIPatterns.BR_CEP, "low"),
+            # Generic numeric patterns (LOWEST PRIORITY - last resort)
+            # These can match parts of other patterns, so check them last
+            ("phone", PIIPatterns.PHONE_INTL, "medium"),
+            ("phone_us", PIIPatterns.PHONE_US, "medium"),
+            ("phone_uk", PIIPatterns.PHONE_UK, "medium"),
+            ("us_zip", PIIPatterns.US_ZIP, "low"),
         ]
 
         # Add custom patterns
