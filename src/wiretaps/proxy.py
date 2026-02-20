@@ -319,5 +319,11 @@ class WiretapsProxy:
         site = web.TCPSite(runner, self.config.host, self.config.port)
         await site.start()
 
-        while True:
-            await asyncio.sleep(3600)
+        try:
+            # Keep server running until interrupted
+            while True:
+                await asyncio.sleep(3600)
+        finally:
+            # Graceful shutdown
+            await site.stop()
+            await runner.cleanup()

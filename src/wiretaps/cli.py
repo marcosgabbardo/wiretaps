@@ -17,8 +17,13 @@ def load_config() -> dict:
     """Load configuration from ~/.wiretaps/config.yaml if it exists."""
     config_file = Path.home() / ".wiretaps" / "config.yaml"
     if config_file.exists():
-        with open(config_file) as f:
-            return yaml.safe_load(f) or {}
+        try:
+            with open(config_file) as f:
+                return yaml.safe_load(f) or {}
+        except yaml.YAMLError as e:
+            console.print(f"[red]Error loading config: {e}[/red]")
+            console.print("[yellow]Using default configuration.[/yellow]")
+            return {}
     return {}
 
 

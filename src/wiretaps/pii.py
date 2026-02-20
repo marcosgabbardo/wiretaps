@@ -431,20 +431,31 @@ class PIIDetector:
         for rule_type, rule_pattern, rule_value in self._compiled_allowlist:
             # Check type filter (None means all types)
             # Match if type starts with rule_type (e.g., "phone" matches "phone_us", "phone_uk")
-            if rule_type is not None:
-                if pii_type != rule_type and not pii_type.startswith(f"{rule_type}_"):
-                    continue
+            type_matches = False
+            if rule_type is None:
+                type_matches = True  # Match any type
+            elif pii_type == rule_type or pii_type.startswith(f"{rule_type}_"):
+                type_matches = True
+
+            if not type_matches:
+                continue
 
             # Check exact value match
-            if rule_value is not None and rule_value == value:
-                return True
+            if rule_value is not None:
+                if rule_value == value:
+                    return True
+                else:
+                    continue  # Value specified but doesn't match
 
             # Check pattern match
-            if rule_pattern is not None and rule_pattern.fullmatch(value):
-                return True
+            if rule_pattern is not None:
+                if rule_pattern.fullmatch(value):
+                    return True
+                else:
+                    continue  # Pattern specified but doesn't match
 
             # If only type specified (no value or pattern), allow all of that type
-            if rule_type is not None and rule_value is None and rule_pattern is None:
+            if rule_value is None and rule_pattern is None:
                 return True
 
         return False
