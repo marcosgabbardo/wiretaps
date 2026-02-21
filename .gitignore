@@ -86,3 +86,8 @@ Thumbs.db
 
 # Project specific
 .wiretaps/
+
+# Docs internos — nunca commitar
+*.md
+!README.md
+!README*.md
