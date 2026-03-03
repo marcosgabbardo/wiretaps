@@ -2,6 +2,9 @@
 CLI interface for wiretaps.
 """
 
+import os
+import signal
+import sys
 from pathlib import Path
 
 import click
@@ -42,70 +45,236 @@ def get_custom_patterns_from_config(config: dict) -> list[dict]:
 @click.group()
 @click.version_option(version=__version__, prog_name="wiretaps")
 def main() -> None:
-    """🔌 wiretaps - See what your AI agents are sending to LLMs."""
+    """wiretaps - See what your AI agents are sending to LLMs."""
     pass
 
 
+# ---------------------------------------------------------------------------
+# V2 commands
+# ---------------------------------------------------------------------------
+
+
 @main.command()
+@click.option("--port", default=8899, help="API port")
+@click.option("--proxy-port", default=8080, help="Proxy port")
 @click.option("--host", default="127.0.0.1", help="Host to bind to")
-@click.option("--port", default=8080, help="Port to bind to")
 @click.option("--target", default="https://api.openai.com", help="Target API URL")
 @click.option("--redact", is_flag=True, help="Redact PII before sending to LLM")
-@click.option("--block", is_flag=True, help="Block requests containing PII (returns 400)")
-def start(host: str, port: int, target: str, redact: bool, block: bool) -> None:
-    """Start the wiretaps proxy server."""
-    import asyncio
+@click.option("--block", is_flag=True, help="Block requests containing PII")
+def start(port: int, proxy_port: int, host: str, target: str, redact: bool, block: bool) -> None:
+    """Start the wiretaps daemon (API + proxy)."""
+    from wiretaps import daemon
 
-    from wiretaps.proxy import WiretapsProxy
+    running, pid = daemon.is_running()
+    if running:
+        console.print(f"[yellow]Daemon already running (PID {pid})[/yellow]")
+        return
 
-    # Load config for allowlist, custom patterns, and webhook
-    config = load_config()
-    allowlist = get_allowlist_from_config(config)
-    custom_patterns = get_custom_patterns_from_config(config)
-
-    # Get webhook config
-    alerts_config = config.get("alerts", {})
-    webhook_url = alerts_config.get("webhook")
-    webhook_events = alerts_config.get("on", ["pii_detected", "blocked"])
-
-    console.print(f"[bold green]🔌 wiretaps v{__version__}[/bold green]")
-    console.print(f"   Proxy:  [cyan]http://{host}:{port}[/cyan]")
+    console.print(f"[bold green]wiretaps v{__version__}[/bold green]")
+    console.print(f"   API:    [cyan]http://{host}:{port}[/cyan]")
+    console.print(f"   Proxy:  [cyan]http://{host}:{proxy_port}[/cyan]")
     console.print(f"   Target: [cyan]{target}[/cyan]")
     if block:
-        console.print(
-            "   Mode:   [bold red]🚫 BLOCK MODE[/bold red] - Requests with PII will be rejected"
-        )
+        console.print("   Mode:   [bold red]BLOCK MODE[/bold red] - Requests with PII will be rejected")
     elif redact:
-        console.print(
-            "   Mode:   [bold yellow]🛡️  REDACT MODE[/bold yellow] - PII will be masked before sending"
-        )
-    if allowlist:
-        console.print(f"   Allowlist: [cyan]{len(allowlist)} rules[/cyan]")
-    if custom_patterns:
-        console.print(f"   Custom Patterns: [cyan]{len(custom_patterns)}[/cyan]")
-    if webhook_url:
-        console.print(f"   Webhook: [cyan]configured[/cyan] (events: {', '.join(webhook_events)})")
+        console.print("   Mode:   [bold yellow]REDACT MODE[/bold yellow] - PII will be masked before sending")
     console.print()
-    console.print("[dim]Set OPENAI_BASE_URL=http://{host}:{port}/v1 in your agent[/dim]")
+    console.print(f"[dim]Set OPENAI_BASE_URL=http://{host}:{proxy_port}/v1 in your agent[/dim]")
     console.print("[dim]Press Ctrl+C to stop[/dim]")
     console.print()
 
-    proxy = WiretapsProxy(
-        host=host,
-        port=port,
-        target=target,
-        redact_mode=redact,
-        block_mode=block,
-        allowlist=allowlist,
-        custom_patterns=custom_patterns,
-        webhook_url=webhook_url,
-        webhook_events=webhook_events,
-    )
-
+    daemon.write_pidfile()
     try:
-        asyncio.run(proxy.run())
+        daemon.run(
+            api_port=port,
+            proxy_port=proxy_port,
+            host=host,
+            target=target,
+            redact=redact,
+            block=block,
+        )
     except KeyboardInterrupt:
         console.print("\n[yellow]Shutting down...[/yellow]")
+    finally:
+        daemon.remove_pidfile()
+
+
+@main.command()
+def stop() -> None:
+    """Stop the wiretaps daemon."""
+    from wiretaps import daemon
+
+    running, pid = daemon.is_running()
+    if not running:
+        console.print("[dim]No daemon running.[/dim]")
+        return
+
+    try:
+        os.kill(pid, signal.SIGTERM)  # type: ignore[arg-type]
+        console.print(f"[green]Stopped daemon (PID {pid})[/green]")
+    except OSError as e:
+        console.print(f"[red]Failed to stop daemon: {e}[/red]")
+    finally:
+        daemon.remove_pidfile()
+
+
+@main.command()
+def status() -> None:
+    """Show daemon status."""
+    from wiretaps import daemon
+
+    running, pid = daemon.is_running()
+    if running:
+        console.print(f"[green]Daemon running[/green] (PID {pid})")
+    else:
+        console.print("[dim]Daemon not running.[/dim]")
+
+
+# ---------------------------------------------------------------------------
+# Session commands
+# ---------------------------------------------------------------------------
+
+
+@main.group()
+def session() -> None:
+    """Manage monitoring sessions."""
+    pass
+
+
+@session.command("new")
+@click.option("--agent", "-a", required=True, help="Agent name")
+def session_new(agent: str) -> None:
+    """Create a new session and print the session ID."""
+    from wiretaps.storage import Storage
+
+    storage = Storage()
+    agent_obj = storage.get_or_create_agent(agent)
+    sess = storage.create_session(agent_id=agent_obj.id, pid=os.getpid())
+    console.print(sess.id)
+
+
+@main.command("run")
+@click.option("--agent", "-a", required=True, help="Agent name")
+@click.argument("cmd", nargs=-1, required=True)
+def run_cmd(agent: str, cmd: tuple) -> None:
+    """Create a session and run a command with wiretaps env vars."""
+    import subprocess
+
+    from wiretaps.storage import Storage
+
+    storage = Storage()
+    agent_obj = storage.get_or_create_agent(agent)
+    sess = storage.create_session(agent_id=agent_obj.id, pid=os.getpid())
+
+    console.print(f"[dim]Session: {sess.id}[/dim]")
+    console.print(f"[dim]Agent:   {agent_obj.name}[/dim]")
+    console.print()
+
+    env = os.environ.copy()
+    env["WIRETAPS_SESSION_ID"] = sess.id
+
+    # Add interceptor to PYTHONPATH for sitecustomize
+    interceptors_dir = str(Path(__file__).parent / "interceptors")
+    existing_pythonpath = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = f"{interceptors_dir}:{existing_pythonpath}" if existing_pythonpath else interceptors_dir
+
+    try:
+        result = subprocess.run(list(cmd), env=env)
+        sys.exit(result.returncode)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Interrupted[/yellow]")
+    finally:
+        from datetime import datetime
+        storage.update_session(sess.id, ended_at=datetime.now().isoformat())
+
+
+@main.command("sessions")
+@click.option("--limit", "-n", default=20, help="Number of sessions to show")
+@click.option("--agent", "-a", help="Filter by agent name")
+def sessions_list(limit: int, agent: str | None) -> None:
+    """List recent sessions."""
+    from rich.table import Table
+
+    from wiretaps.storage import Storage
+
+    storage = Storage()
+    agent_id = None
+    if agent:
+        agent_obj = storage.get_agent_by_name(agent)
+        if not agent_obj:
+            console.print(f"[red]Agent '{agent}' not found[/red]")
+            return
+        agent_id = agent_obj.id
+
+    sessions = storage.list_sessions(agent_id=agent_id, limit=limit)
+    if not sessions:
+        console.print("[dim]No sessions found.[/dim]")
+        return
+
+    # Build agent name lookup
+    agents = {a.id: a.name for a in storage.list_agents()}
+
+    table = Table(title="Sessions")
+    table.add_column("ID", style="dim", max_width=36)
+    table.add_column("Agent")
+    table.add_column("Started")
+    table.add_column("Ended")
+    table.add_column("PID", justify="right")
+
+    for s in sessions:
+        table.add_row(
+            s.id[:12] + "...",
+            agents.get(s.agent_id, "?"),
+            s.started_at[:19],
+            (s.ended_at or "running")[:19],
+            str(s.pid or ""),
+        )
+
+    console.print(table)
+
+
+@main.command("events")
+@click.option("--session", "-s", "session_id", help="Filter by session ID")
+@click.option("--type", "-t", "event_type", type=click.Choice(["llm_call", "shell_cmd", "http_request"]), help="Filter by type")
+@click.option("--limit", "-n", default=50, help="Number of events to show")
+def events_list(session_id: str | None, event_type: str | None, limit: int) -> None:
+    """List captured events."""
+    from rich.table import Table
+
+    from wiretaps.storage import Storage
+
+    storage = Storage()
+    events = storage.list_events(session_id=session_id, event_type=event_type, limit=limit)
+
+    if not events:
+        console.print("[dim]No events found.[/dim]")
+        return
+
+    table = Table(title="Events")
+    table.add_column("ID", justify="right")
+    table.add_column("Type")
+    table.add_column("Timestamp", style="dim")
+    table.add_column("Duration", justify="right")
+    table.add_column("PII")
+    table.add_column("Status", justify="right")
+
+    for e in events:
+        pii_text = "[green]clean[/green]" if not e.pii_types else f"[red]{', '.join(e.pii_types)}[/red]"
+        table.add_row(
+            str(e.id),
+            e.type,
+            e.timestamp[:19],
+            f"{e.duration_ms}ms",
+            pii_text,
+            str(e.status),
+        )
+
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# Legacy v1 commands (preserved for backward compat)
+# ---------------------------------------------------------------------------
 
 
 @main.command()
@@ -134,11 +303,11 @@ def logs(limit: int, pii_only: bool, api_key: str | None) -> None:
     for entry in entries:
         if entry.pii_types:
             if entry.redacted:
-                pii_status = "[cyan]🛡️ " + ", ".join(entry.pii_types) + "[/cyan]"
+                pii_status = "[cyan]" + ", ".join(entry.pii_types) + "[/cyan]"
             else:
-                pii_status = "[red]⚠️ " + ", ".join(entry.pii_types) + "[/red]"
+                pii_status = "[red]" + ", ".join(entry.pii_types) + "[/red]"
         else:
-            pii_status = "[green]✓ clean[/green]"
+            pii_status = "[green]clean[/green]"
         table.add_row(
             entry.timestamp.strftime("%H:%M:%S"),
             entry.endpoint,
@@ -164,7 +333,6 @@ def export(output_format: str, output: str, since: str | None, until: str | None
 
     storage = Storage()
 
-    # Parse date filters
     start_time = None
     end_time = None
 
@@ -188,12 +356,10 @@ def export(output_format: str, output: str, since: str | None, until: str | None
             console.print(f"[red]Invalid date format: {until}[/red]")
             return
 
-    # Safe limit: default 100k, max 1M (prevent OOM)
     safe_limit = None
     if limit is not None:
         safe_limit = min(limit, 1_000_000)
     elif limit is None:
-        # No limit specified - use safe default of 100k
         safe_limit = 100_000
         console.print(f"[dim]No limit specified, using safe default: {safe_limit:,} entries[/dim]")
 
@@ -214,7 +380,7 @@ def export(output_format: str, output: str, since: str | None, until: str | None
             end_time=end_time,
         )
 
-    console.print(f"[green]✓ Exported {count} entries to {output}[/green]")
+    console.print(f"[green]Exported {count} entries to {output}[/green]")
 
 
 @main.command()
@@ -292,8 +458,7 @@ def stats(as_json: bool, by_day: bool, by_hour: bool, api_key: str | None) -> No
         console.print(json.dumps(output, indent=2))
         return
 
-    # Pretty print
-    console.print("\n[bold cyan]📊 wiretaps Statistics[/bold cyan]\n")
+    console.print(f"\n[bold cyan]wiretaps Statistics[/bold cyan]\n")
 
     console.print(f"  [bold]Total Requests:[/bold] {overall['total_requests']:,}")
     console.print(f"  [bold]Total Tokens:[/bold] {overall['total_tokens']:,}")
@@ -314,53 +479,8 @@ def stats(as_json: bool, by_day: bool, by_hour: bool, api_key: str | None) -> No
 
 
 @main.command()
-def dashboard() -> None:
-    """Open the live dashboard (TUI)."""
-    from wiretaps.dashboard import run_dashboard
-
-    run_dashboard()
-
-
-@main.group()
-def api() -> None:
-    """Manage the REST API server."""
-    pass
-
-
-@api.command("start")
-@click.option("--host", default="127.0.0.1", help="Host to bind to")
-@click.option("--port", default=8081, help="Port to bind to")
-def api_start(host: str, port: int) -> None:
-    """Start the REST API server."""
-    import asyncio
-
-    from wiretaps.api import WiretapsAPI
-
-    console.print(f"[bold green]🔌 wiretaps API v{__version__}[/bold green]")
-    console.print(f"   Server: [cyan]http://{host}:{port}[/cyan]")
-    console.print()
-    console.print("[dim]Endpoints:[/dim]")
-    console.print("[dim]  GET /health       - Health check[/dim]")
-    console.print("[dim]  GET /logs         - List logs (with pagination)[/dim]")
-    console.print("[dim]  GET /logs/:id     - Get log details[/dim]")
-    console.print("[dim]  GET /stats        - Usage statistics[/dim]")
-    console.print()
-    console.print("[dim]Press Ctrl+C to stop[/dim]")
-    console.print()
-
-    api_server = WiretapsAPI(host=host, port=port)
-
-    try:
-        asyncio.run(api_server.run())
-    except KeyboardInterrupt:
-        console.print("\n[yellow]Shutting down API server...[/yellow]")
-
-
-@main.command()
 def init() -> None:
     """Initialize wiretaps configuration."""
-    from pathlib import Path
-
     config_dir = Path.home() / ".wiretaps"
     config_file = config_dir / "config.yaml"
 
@@ -374,6 +494,10 @@ def init() -> None:
 proxy:
   host: 127.0.0.1
   port: 8080
+
+api:
+  host: 127.0.0.1
+  port: 8899
 
 storage:
   type: sqlite
@@ -396,22 +520,13 @@ pii:
   redact: false
 
   # Allowlist: PII that should NOT be flagged/redacted
-  # Examples:
   allowlist:
-    # Allow specific email address
     # - type: email
     #   value: "myemail@company.com"
-
-    # Allow all emails from a domain (regex)
     # - type: email
-    #   pattern: ".*@mycompany\\.com"
-
-    # Allow a specific phone number
+    #   pattern: ".*@mycompany\\\\.com"
     # - type: phone
     #   value: "+5511999999999"
-
-    # Allow all phone numbers (use with caution!)
-    # - type: phone
 
   # Custom patterns to detect (in addition to built-in)
   custom: []
@@ -422,7 +537,7 @@ pii:
 """
 
     config_file.write_text(default_config)
-    console.print(f"[green]✓ Created config:[/green] {config_file}")
+    console.print(f"[green]Created config:[/green] {config_file}")
 
 
 @main.command()
@@ -447,10 +562,10 @@ def scan(text: str, no_config: bool) -> None:
     results = detector.scan(text)
 
     if not results:
-        console.print("[green]✓ No PII detected[/green]")
+        console.print("[green]No PII detected[/green]")
         return
 
-    console.print("[red]⚠️ PII Detected:[/red]")
+    console.print("[red]PII Detected:[/red]")
     for match in results:
         console.print(f"  - [yellow]{match.pattern_name}[/yellow]: {match.matched_text}")
 
@@ -467,7 +582,6 @@ def allowlist(action: str, pii_type: str | None, value: str | None, pattern: str
         wiretaps allowlist list
         wiretaps allowlist add -t email -v "me@company.com"
         wiretaps allowlist add -t email -p ".*@company\\.com"
-        wiretaps allowlist add -t phone -v "+5511999999999"
         wiretaps allowlist remove -t email -v "me@company.com"
         wiretaps allowlist clear
     """
@@ -520,7 +634,7 @@ def allowlist(action: str, pii_type: str | None, value: str | None, pattern: str
         with open(config_file, "w") as f:
             yaml.dump(config, f, default_flow_style=False)
 
-        console.print(f"[green]✓ Added rule:[/green] {new_rule}")
+        console.print(f"[green]Added rule:[/green] {new_rule}")
 
     elif action == "remove":
         if not pii_type and not value and not pattern:
@@ -541,7 +655,7 @@ def allowlist(action: str, pii_type: str | None, value: str | None, pattern: str
         if removed:
             with open(config_file, "w") as f:
                 yaml.dump(config, f, default_flow_style=False)
-            console.print(f"[green]✓ Removed {removed} rule(s)[/green]")
+            console.print(f"[green]Removed {removed} rule(s)[/green]")
         else:
             console.print("[yellow]No matching rules found[/yellow]")
 
@@ -554,7 +668,7 @@ def allowlist(action: str, pii_type: str | None, value: str | None, pattern: str
             config["pii"]["allowlist"] = []
             with open(config_file, "w") as f:
                 yaml.dump(config, f, default_flow_style=False)
-            console.print("[green]✓ Allowlist cleared[/green]")
+            console.print("[green]Allowlist cleared[/green]")
 
 
 @main.command()
@@ -568,7 +682,6 @@ def patterns(action: str, name: str | None, regex: str | None, severity: str) ->
     Examples:
         wiretaps patterns list
         wiretaps patterns add --name "internal_id" --regex "INT-[0-9]{6}" --severity high
-        wiretaps patterns add -n "employee_id" -r "EMP[A-Z]{2}[0-9]{4}" -s critical
         wiretaps patterns remove --name "internal_id"
     """
     import re
@@ -613,14 +726,12 @@ def patterns(action: str, name: str | None, regex: str | None, severity: str) ->
             console.print("[red]Both --name and --regex are required for adding a pattern[/red]")
             return
 
-        # Validate regex
         try:
             re.compile(regex)
         except re.error as e:
             console.print(f"[red]Invalid regex pattern: {e}[/red]")
             return
 
-        # Check for duplicate names
         if any(p.get("name") == name for p in patterns_list):
             console.print(f"[yellow]Pattern with name '{name}' already exists. Remove it first.[/yellow]")
             return
@@ -636,7 +747,7 @@ def patterns(action: str, name: str | None, regex: str | None, severity: str) ->
         with open(config_file, "w") as f:
             yaml.dump(config, f, default_flow_style=False)
 
-        console.print(f"[green]✓ Added custom pattern:[/green] {name} (severity: {severity})")
+        console.print(f"[green]Added custom pattern:[/green] {name} (severity: {severity})")
 
     elif action == "remove":
         if not name:
@@ -650,7 +761,7 @@ def patterns(action: str, name: str | None, regex: str | None, severity: str) ->
         if removed:
             with open(config_file, "w") as f:
                 yaml.dump(config, f, default_flow_style=False)
-            console.print(f"[green]✓ Removed pattern: {name}[/green]")
+            console.print(f"[green]Removed pattern: {name}[/green]")
         else:
             console.print(f"[yellow]No pattern found with name '{name}'[/yellow]")
 

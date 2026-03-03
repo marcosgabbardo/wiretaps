@@ -87,6 +87,9 @@ Thumbs.db
 # Project specific
 .wiretaps/
 
+# Node.js (future dashboard)
+node_modules/
+
 # Docs internos — nunca commitar
 *.md
 !README.md

@@ -6,6 +6,7 @@ Intercepts requests to LLM APIs, logs them, and forwards to the target.
 
 import asyncio
 import json
+import re
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -13,7 +14,17 @@ from datetime import datetime
 from aiohttp import ClientSession, ClientTimeout, web
 
 from wiretaps.pii import PIIDetector
-from wiretaps.storage import LogEntry, Storage
+from wiretaps.storage import Event, LogEntry, Storage
+
+# Patterns for known LLM API endpoints
+_LLM_ENDPOINT_PATTERNS = [
+    re.compile(r"/v1/chat/completions"),
+    re.compile(r"/v1/completions"),
+    re.compile(r"/v1/embeddings"),
+    re.compile(r"/v1/messages"),
+    re.compile(r"/v1/audio"),
+    re.compile(r"/v1/images"),
+]
 
 
 @dataclass
@@ -25,8 +36,8 @@ class ProxyConfig:
     target: str = "https://api.openai.com"
     timeout: int = 120
     pii_detection: bool = True
-    redact_mode: bool = False  # If True, redact PII before sending to LLM
-    block_mode: bool = False  # If True, block requests containing PII
+    redact_mode: bool = False
+    block_mode: bool = False
 
 
 class WiretapsProxy:
@@ -36,7 +47,6 @@ class WiretapsProxy:
     and forwards to the target API.
     """
 
-    # Max request body size (10 MB)
     MAX_BODY_SIZE = 10 * 1024 * 1024
 
     def __init__(
@@ -51,6 +61,7 @@ class WiretapsProxy:
         custom_patterns: list[dict] | None = None,
         webhook_url: str | None = None,
         webhook_events: list[str] | None = None,
+        storage: Storage | None = None,
     ):
         self.config = ProxyConfig(
             host=host,
@@ -62,13 +73,17 @@ class WiretapsProxy:
         )
         self.webhook_url = webhook_url
         self.webhook_events = webhook_events or ["pii_detected", "blocked"]
-        self.storage = Storage()
-        self.pii_detector = PIIDetector(
-            allowlist=allowlist,
-            custom_patterns=custom_patterns,
-        ) if pii_detection else None
+        self.storage = storage or Storage()
+        self.pii_detector = (
+            PIIDetector(
+                allowlist=allowlist,
+                custom_patterns=custom_patterns,
+            )
+            if pii_detection
+            else None
+        )
         self.app = web.Application()
-        self._session: ClientSession | None = None  # Shared session pool
+        self._session: ClientSession | None = None
         self._setup_routes()
 
     def _setup_routes(self) -> None:
@@ -82,6 +97,17 @@ class WiretapsProxy:
             self._session = ClientSession(timeout=timeout)
         return self._session
 
+    def _is_llm_endpoint(self, path: str) -> bool:
+        """Check if the path matches a known LLM API endpoint."""
+        return any(p.search(path) for p in _LLM_ENDPOINT_PATTERNS)
+
+    def _extract_session_id(self, request: web.Request) -> str | None:
+        """Extract session ID from header or env."""
+        return (
+            request.headers.get("X-Wiretaps-Session-Id")
+            or request.headers.get("X-Wiretaps-Session-ID")
+        )
+
     async def _proxy_handler(self, request: web.Request) -> web.Response:
         """Handle incoming requests and proxy to target."""
         start_time = time.time()
@@ -91,27 +117,24 @@ class WiretapsProxy:
         if request.query_string:
             target_url += f"?{request.query_string}"
 
-        # Extract API key from Authorization header
         api_key = self._extract_api_key(request)
+        session_id = self._extract_session_id(request)
 
-        # Read request body with size limit (DoS protection)
+        # Read request body with size limit
         try:
             body = await request.content.read(self.MAX_BODY_SIZE)
-            
-            # Check if there's more data (body too large)
+
             if not request.content.at_eof():
                 return web.Response(
                     text=json.dumps({"error": "Request body too large (max 10MB)"}),
                     status=413,
                     content_type="application/json",
                 )
-            
-            # Robust encoding with fallback
+
             if body:
                 try:
                     body_text = body.decode("utf-8")
                 except UnicodeDecodeError:
-                    # Fallback to latin-1 (never fails) with replacement
                     body_text = body.decode("latin-1", errors="replace")
             else:
                 body_text = ""
@@ -128,33 +151,33 @@ class WiretapsProxy:
                 content_type="application/json",
             )
 
-        # Original body for logging
         original_body_text = body_text
 
-        pii_types = []
+        pii_types: list[str] = []
         redacted_body = None
         if self.pii_detector and body_text:
             pii_types = self.pii_detector.get_pii_types(body_text)
 
-            # Block request if block_mode is enabled and PII was found
+            # Block mode
             if self.config.block_mode and pii_types:
                 duration_ms = int((time.time() - start_time) * 1000)
 
-                # Log the blocked request
                 await self._log_request(
                     method=request.method,
                     endpoint=f"/{path}",
                     request_body=original_body_text,
-                    response_body=json.dumps({"error": "Request blocked: PII detected", "pii_types": pii_types}),
+                    response_body=json.dumps(
+                        {"error": "Request blocked: PII detected", "pii_types": pii_types}
+                    ),
                     status=400,
                     tokens=0,
                     duration_ms=duration_ms,
                     pii_types=pii_types,
                     blocked=True,
                     api_key=api_key,
+                    session_id=session_id,
                 )
 
-                # Send webhook if configured
                 await self._send_webhook(
                     endpoint=f"/{path}",
                     pii_types=pii_types,
@@ -163,12 +186,14 @@ class WiretapsProxy:
                 )
 
                 return web.Response(
-                    text=json.dumps({"error": "Request blocked: PII detected", "pii_types": pii_types}),
+                    text=json.dumps(
+                        {"error": "Request blocked: PII detected", "pii_types": pii_types}
+                    ),
                     status=400,
                     content_type="application/json",
                 )
 
-            # Redact PII if enabled and PII was found
+            # Redact mode
             if self.config.redact_mode and pii_types:
                 redacted_body = self.pii_detector.redact(body_text)
                 body_text = redacted_body
@@ -181,7 +206,6 @@ class WiretapsProxy:
         }
 
         try:
-            # Use shared session (connection pool)
             session = await self._get_session()
             async with session.request(
                 method=request.method,
@@ -197,7 +221,6 @@ class WiretapsProxy:
                     not in ("content-encoding", "transfer-encoding", "content-length")
                 }
 
-                # Robust response decoding
                 try:
                     response_text = response_body.decode("utf-8")
                 except UnicodeDecodeError:
@@ -206,7 +229,6 @@ class WiretapsProxy:
                 tokens = self._estimate_tokens(body_text, response_text)
                 duration_ms = int((time.time() - start_time) * 1000)
 
-                # Log original body (not redacted) for audit purposes
                 await self._log_request(
                     method=request.method,
                     endpoint=f"/{path}",
@@ -218,16 +240,18 @@ class WiretapsProxy:
                     pii_types=pii_types,
                     redacted=redacted_body is not None,
                     api_key=api_key,
+                    session_id=session_id,
                 )
 
-                # Send webhook if PII was detected (fire-and-forget)
                 if pii_types:
-                    asyncio.create_task(self._send_webhook(
-                        endpoint=f"/{path}",
-                        pii_types=pii_types,
-                        redacted=redacted_body is not None,
-                        blocked=False,
-                    ))
+                    asyncio.create_task(
+                        self._send_webhook(
+                            endpoint=f"/{path}",
+                            pii_types=pii_types,
+                            redacted=redacted_body is not None,
+                            blocked=False,
+                        )
+                    )
 
                 return web.Response(
                     body=response_body,
@@ -247,6 +271,7 @@ class WiretapsProxy:
                 pii_types=pii_types,
                 error=str(e),
                 api_key=api_key,
+                session_id=session_id,
             )
             return web.Response(
                 text=json.dumps({"error": str(e)}),
@@ -258,7 +283,7 @@ class WiretapsProxy:
         """Extract API key from Authorization header."""
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
-            return auth_header[7:]  # Remove "Bearer " prefix
+            return auth_header[7:]
         return auth_header if auth_header else None
 
     def _mask_api_key(self, api_key: str | None) -> str | None:
@@ -270,7 +295,7 @@ class WiretapsProxy:
         return api_key[:4] + "..." + api_key[-4:]
 
     def _estimate_tokens(self, request: str, response: str) -> int:
-        """Rough token estimation (4 chars ≈ 1 token)."""
+        """Rough token estimation (4 chars ~ 1 token)."""
         try:
             resp_json = json.loads(response)
             if "usage" in resp_json:
@@ -293,8 +318,10 @@ class WiretapsProxy:
         redacted: bool = False,
         blocked: bool = False,
         api_key: str | None = None,
+        session_id: str | None = None,
     ) -> None:
         """Log request to storage (async, non-blocking)."""
+        # Always write to v1 logs table for backward compat
         entry = LogEntry(
             timestamp=datetime.now(),
             method=method,
@@ -310,21 +337,81 @@ class WiretapsProxy:
             blocked=blocked,
             api_key=api_key,
         )
-        # Use async log to avoid blocking event loop
         await self.storage.log_async(entry)
+
+        # Also write to v2 events table if session_id provided
+        if session_id:
+            is_llm = self._is_llm_endpoint(endpoint)
+            event_type = "llm_call" if is_llm else "http_request"
+
+            if event_type == "llm_call":
+                data = {
+                    "endpoint": endpoint,
+                    "model": self._extract_model(request_body, response_body),
+                    "request": request_body[:5000],
+                    "response": response_body[:5000],
+                    "tokens": tokens,
+                    "provider": self._guess_provider(endpoint),
+                    "api_key_masked": self._mask_api_key(api_key),
+                }
+            else:
+                data = {
+                    "method": method,
+                    "url": endpoint,
+                    "request_body": request_body[:5000],
+                    "response_body": response_body[:5000],
+                    "status": status,
+                    "is_llm": False,
+                }
+
+            event = Event(
+                session_id=session_id,
+                type=event_type,
+                timestamp=datetime.now().isoformat(),
+                duration_ms=duration_ms,
+                data=data,
+                pii_types=pii_types,
+                status=status,
+                error=error,
+            )
+            await self.storage.insert_event_async(event)
 
         if pii_types:
             if blocked:
-                pii_status = f"🚫 BLOCKED: {', '.join(pii_types)}"
+                pii_status = f"BLOCKED: {', '.join(pii_types)}"
             elif redacted:
-                pii_status = f"🛡️  REDACTED: {', '.join(pii_types)}"
+                pii_status = f"REDACTED: {', '.join(pii_types)}"
             else:
-                pii_status = f"⚠️  PII: {', '.join(pii_types)}"
+                pii_status = f"PII: {', '.join(pii_types)}"
         else:
-            pii_status = "✓"
+            pii_status = "ok"
         print(
             f"{entry.timestamp.strftime('%H:%M:%S')} | {method} {endpoint} | {tokens} tk | {pii_status}"
         )
+
+    def _extract_model(self, request_body: str, response_body: str) -> str:
+        """Try to extract model name from request or response."""
+        for body in (request_body, response_body):
+            try:
+                data = json.loads(body)
+                if "model" in data:
+                    return data["model"]
+            except Exception:
+                pass
+        return "unknown"
+
+    def _guess_provider(self, endpoint: str) -> str:
+        """Guess the LLM provider from the target URL."""
+        target = self.config.target.lower()
+        if "anthropic" in target:
+            return "anthropic"
+        if "openai" in target:
+            return "openai"
+        if "google" in target or "gemini" in target:
+            return "google"
+        if "cohere" in target:
+            return "cohere"
+        return "unknown"
 
     async def _send_webhook(
         self,
@@ -337,7 +424,6 @@ class WiretapsProxy:
         if not self.webhook_url:
             return
 
-        # Check if this event type is enabled
         event_type = "blocked" if blocked else "pii_detected"
         if event_type not in self.webhook_events:
             return
@@ -351,10 +437,9 @@ class WiretapsProxy:
         }
 
         try:
-            # Short timeout (2s) to avoid blocking proxy
             timeout = ClientTimeout(total=2)
             session = await self._get_session()
-            
+
             async with session.post(
                 self.webhook_url,
                 json=payload,
@@ -362,25 +447,37 @@ class WiretapsProxy:
                 timeout=timeout,
             ) as resp:
                 if resp.status >= 400:
-                    print(f"⚠️  Webhook failed: {resp.status}")
+                    print(f"Webhook failed: {resp.status}")
         except asyncio.TimeoutError:
-            print("⚠️  Webhook timeout (2s)")
+            print("Webhook timeout (2s)")
         except Exception as e:
-            print(f"⚠️  Webhook error: {e}")
+            print(f"Webhook error: {e}")
+
+    async def start_background(self) -> web.AppRunner:
+        """Start proxy as a background aiohttp app (for daemon mode)."""
+        runner = web.AppRunner(self.app)
+        await runner.setup()
+        site = web.TCPSite(runner, self.config.host, self.config.port)
+        await site.start()
+        return runner
+
+    async def stop_background(self, runner: web.AppRunner) -> None:
+        """Stop the background proxy."""
+        if self._session and not self._session.closed:
+            await self._session.close()
+        await runner.cleanup()
 
     async def run(self) -> None:
-        """Start the proxy server."""
+        """Start the proxy server (standalone mode)."""
         runner = web.AppRunner(self.app)
         await runner.setup()
         site = web.TCPSite(runner, self.config.host, self.config.port)
         await site.start()
 
         try:
-            # Keep server running until interrupted
             while True:
                 await asyncio.sleep(3600)
         finally:
-            # Graceful shutdown
             if self._session and not self._session.closed:
                 await self._session.close()
             await site.stop()
