@@ -50,7 +50,7 @@ class SessionResponse(BaseModel):
 class EventIngest(BaseModel):
     session_id: str
     type: str = Field(..., pattern=r"^(llm_call|shell_cmd|http_request)$")
-    timestamp: str
+    timestamp: str | None = None  # auto-generated if not provided
     duration_ms: int = 0
     data: dict = Field(default_factory=dict)
     pii_types: list[str] = Field(default_factory=list)

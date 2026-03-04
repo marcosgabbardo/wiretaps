@@ -1,5 +1,7 @@
 """Event endpoints."""
 
+from datetime import datetime
+
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from wiretaps.api.schemas import EventIngest, EventResponse
@@ -78,7 +80,7 @@ async def ingest_event(body: EventIngest, request: Request) -> dict:
     event = Event(
         session_id=body.session_id,
         type=body.type,
-        timestamp=body.timestamp,
+        timestamp=body.timestamp or datetime.now().isoformat(),
         duration_ms=body.duration_ms,
         data=body.data,
         pii_types=body.pii_types,
