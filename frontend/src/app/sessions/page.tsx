@@ -42,7 +42,7 @@ export default function SessionsPage() {
         const [sess, ags, evts] = await Promise.all([
           api.sessions(200),
           api.agents(),
-          api.events({ limit: 50000 }),
+          api.events({ limit: 1000 }),
         ]);
 
         setSessions(sess);
