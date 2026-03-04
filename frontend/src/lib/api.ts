@@ -16,8 +16,12 @@ export const api = {
   sessions: (limit = 100, offset = 0) =>
     get<Session[]>(`/sessions?limit=${limit}&offset=${offset}`),
   session: (id: string) => get<Session>(`/sessions/${id}`),
-  sessionEvents: (id: string, limit = 5000) =>
-    get<WiretapEvent[]>(`/sessions/${id}/events?limit=${limit}`),
+  sessionEvents: async (id: string, limit = 1000) => {
+    const res = await fetch(`${BASE}/sessions/${id}/events?limit=${limit}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`API ${res.status}: /sessions/${id}/events?limit=${limit}`);
+    const data = await res.json();
+    return (Array.isArray(data) ? data : data.events ?? []) as WiretapEvent[];
+  },
   events: async (params?: {
     type?: string;
     session_id?: string;
